@@ -4,10 +4,10 @@ import numpy as np
 
 class IRegressor(Protocol):
     """Protocolo que declara a interface esperada de um regressor (fit e predict)."""
-    def fit(self, X: np.ndarray, y: np.ndarray) -> Self:
+    def fit(self, x: np.ndarray, y: np.ndarray) -> Self:
         ...
 
-    def predict(self, X: np.ndarray) -> np.ndarray:
+    def predict(self, x: np.ndarray) -> np.ndarray:
         ...
 
 
