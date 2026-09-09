@@ -3,7 +3,7 @@ from typing import Any, Protocol
 
 class IModeloPrevisor(Protocol):
     """Protocolo para qualquer modelo com capacidade de predição."""
-    def predict(self, X: Any) -> Any:
+    def predict(self, x: Any) -> Any:
         ...
 
 

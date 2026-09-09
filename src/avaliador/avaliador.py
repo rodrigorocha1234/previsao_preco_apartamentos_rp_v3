@@ -10,11 +10,11 @@ class Avaliador(ABC):
     def avaliar_acuracia(
         self,
         modelo: IModeloPrevisor,
-        X_test: np.ndarray | pd.DataFrame,
-        Y_test: np.ndarray | pd.Series,
+        x_test: np.ndarray | pd.DataFrame,
+        y_test: np.ndarray | pd.Series,
     ) -> float:
         """ Faz uma predição e avalia o modelo. Poderia parametrizar o tipo de
         avaliação, entre outros.
         """
-        predicoes = modelo.predict(X_test)
-        return float(accuracy_score(Y_test, predicoes))
+        predicoes = modelo.predict(x_test)
+        return float(accuracy_score(y_test, predicoes))
