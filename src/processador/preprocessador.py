@@ -137,7 +137,7 @@ class Preprocessador(IPreprocessador):
         elif hasattr(alvo, "fit_transform") and hasattr(alvo, "transform"):
             return alvo
         elif callable(alvo):
-            return alvo()
+            return alvo
 
         raise TypeError(f"Scaler inválido: {alvo}. Deve ser string ou objeto transformador.")
 
