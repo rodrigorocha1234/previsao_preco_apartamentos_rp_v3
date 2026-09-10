@@ -5,15 +5,13 @@ from typing import Any, Protocol, runtime_checkable
 class IRegressor(Protocol):
     """Protocolo que declara a interface esperada de um regressor (fit e predict).
     
-    Utiliza argumentos posicionais (PEP 570) e parâmetros flexíveis para garantir
-    compatibilidade estrutural com todos os estimadores e regressores do scikit-learn
-    (LinearRegression, Ridge, Lasso, RandomForestRegressor, etc.).
+    Compatível 1:1 com os regressores do scikit-learn (LinearRegression, Ridge, Lasso, etc.).
     """
 
-    def fit(self, X: Any, y: Any = None, /, *args: Any, **kwargs: Any) -> Any:
+    def fit(self, X: Any, y: Any, sample_weight: Any = None) -> Any:
         ...
 
-    def predict(self, X: Any, /, *args: Any, **kwargs: Any) -> Any:
+    def predict(self, X: Any) -> Any:
         ...
 
 
