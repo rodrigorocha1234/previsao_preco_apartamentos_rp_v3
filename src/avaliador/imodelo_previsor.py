@@ -1,9 +1,11 @@
-from typing import Any, Protocol
+from typing import Any, Protocol, runtime_checkable
 
 
+@runtime_checkable
 class IModeloPrevisor(Protocol):
     """Protocolo para qualquer modelo com capacidade de predição."""
-    def predict(self, x: Any) -> Any:
+
+    def predict(self, X: Any, /, *args: Any, **kwargs: Any) -> Any:
         ...
 
 

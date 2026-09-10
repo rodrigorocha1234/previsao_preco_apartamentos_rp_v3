@@ -16,7 +16,7 @@ class EstrategiaRegressaoLinear(EstrategiaModelo):
         positive: bool = False,
         params: dict[str, Any] | None = None,
     ) -> None:
-        self._modelo = LinearRegression(
+        self._modelo: IRegressor = LinearRegression(
             fit_intercept=fit_intercept,
             copy_X=copy_X,
             n_jobs=n_jobs,

@@ -1,13 +1,19 @@
-from typing import Protocol, Self
-import numpy as np
+from typing import Any, Protocol, runtime_checkable
 
 
+@runtime_checkable
 class IRegressor(Protocol):
-    """Protocolo que declara a interface esperada de um regressor (fit e predict)."""
-    def fit(self, x: np.ndarray, y: np.ndarray) -> Self:
+    """Protocolo que declara a interface esperada de um regressor (fit e predict).
+    
+    Utiliza argumentos posicionais (PEP 570) e parâmetros flexíveis para garantir
+    compatibilidade estrutural com todos os estimadores e regressores do scikit-learn
+    (LinearRegression, Ridge, Lasso, RandomForestRegressor, etc.).
+    """
+
+    def fit(self, X: Any, y: Any = None, /, *args: Any, **kwargs: Any) -> Any:
         ...
 
-    def predict(self, x: np.ndarray) -> np.ndarray:
+    def predict(self, X: Any, /, *args: Any, **kwargs: Any) -> Any:
         ...
 
 
