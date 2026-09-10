@@ -254,25 +254,74 @@ pip install -r requirements.txt  # ou via pip diretamente: pandas, scikit-learn,
 
 ### 4. Executar o Pipeline Principal
 ```bash
-PYTHONPATH=src python src/main.py
+python src/main.py
 ```
 
-O arquivo `src/main.py` utiliza injeção de dependência para orquestrar o carregamento e o pré-processamento:
+#### Como Escolher o Tipo de Processamento no `src/main.py`
+O arquivo `src/main.py` utiliza injeção de dependência para permitir a configuração precisa do pipeline de dados:
+
 ```python
-carregador = CarregadorXLSX(caminho=caminho_arquivo, atributos=lista)
-preprocessador = Preprocessador()
+from carregador.carregador_csv import CarregadorXLSX
+from processador.preprocessador import Preprocessador
+from main import PipelineML
 
-pml = PipelineML(carregador_dados=carregador, preprocessador=preprocessador)
-pml.rodar_treinamento_simples()
+if __name__ == '__main__':
+    lista = ['Zona', 'Quartos', 'Banheiros', 'Vagas', 'Metragem', 'Valor_da_Venda']
+    caminho_arquivo = os.path.join(os.getcwd(), 'docs', 'bairro_final_v3_engineered_bkp.xlsx')
+    carregador = CarregadorXLSX(caminho=caminho_arquivo, atributos=lista)
+
+    # -------------------------------------------------------------------------
+    # ESCOLHA DA ESTRATÉGIA DE PRÉ-PROCESSAMENTO:
+    # -------------------------------------------------------------------------
+    
+    # OPÇÃO 1: Processamento Robusto a Outliers (Recomendado para imóveis)
+    preprocessador = Preprocessador(
+        tipo_scaler="robust",   # RobustScaler: baseado em mediana e IQR
+        escalar=True,
+        drop_first=True,        # Evita a Dummy Variable Trap em modelos lineares
+        tamanho_teste=0.2,      # 20% para teste, 80% para treino
+        random_state=42,
+    )
+
+    # OPÇÃO 2: Padronização Clássica Z-Score (Média 0, Variância 1)
+    # preprocessador = Preprocessador(tipo_scaler="standard")
+
+    # OPÇÃO 3: Normalização Linear no intervalo [0, 1]
+    # preprocessador = Preprocessador(tipo_scaler="minmax")
+
+    # OPÇÃO 4: Para Modelos de Árvore (Random Forest, XGBoost) sem escalonamento
+    # preprocessador = Preprocessador(escalar=False, drop_first=False)
+
+    # Injeção de dependência no PipelineML:
+    pml = PipelineML(
+        carregador_dados=carregador,
+        preprocessador=preprocessador,
+        flag_processamento=True,
+    )
+    pml.rodar_treinamento_simples()
 ```
+
+#### Tabela de Opções de Processamento:
+
+| Parâmetro | Valores Suportados | Cenário Recomendado |
+| :--- | :--- | :--- |
+| **`tipo_scaler`** | `"robust"` | **Imóveis/Mercado Imobiliário**: dados com forte assimetria e presença de *outliers* (coberturas, mansões). |
+| | `"standard"` | Regressão linear clássica (OLS, Ridge, Lasso) assumindo distribuição aproximadamente normal. |
+| | `"minmax"` | Quando se deseja manter valores delimitados estritamente em $[0, 1]$. |
+| | `"maxabs"` | Escala pelo valor absoluto máximo (ideal para matrizes esparsas). |
+| **`escalar`** | `True` / `False` | `True` para modelos lineares/distância/redes neurais; `False` para modelos de árvore (Random Forest, XGBoost). |
+| **`drop_first`** | `True` / `False` | `True` descarta a primeira categoria dummy evitando colinearidade exata em OLS. |
+| **`flag_processamento`**| `True` / `False` | No `PipelineML`: `True` executa o pré-processamento; `False` imprime o DataFrame original. |
 
 Saída esperada:
 ```text
+=== PIPELINE ML COM SCALER: 'ROBUST' ===
 Colunas de features: ['Quartos', 'Banheiros', 'Vagas', 'Metragem', 'Zona_Zona Leste', 'Zona_Zona Norte', 'Zona_Zona Oeste', 'Zona_Zona Sul']
 Formato dos dados processados:
 X_treino: (4569, 8), y_treino: (4569,)
 X_teste: (1143, 8), y_teste: (1143,)
 ```
+
 
 ---
 

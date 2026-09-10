@@ -44,8 +44,38 @@ class PipelineML:
 if __name__ == '__main__':
     lista = ['Zona', 'Quartos', 'Banheiros', 'Vagas', 'Metragem', 'Valor_da_Venda']
     caminho_arquivo = os.path.join(os.getcwd(), 'docs', 'bairro_final_v3_engineered_bkp.xlsx')
-    preprocessador_modelo = Preprocessador()
     carregador = CarregadorXLSX(caminho=caminho_arquivo, atributos=lista)
 
-    pml = PipelineML(carregador_dados=carregador, preprocessador=preprocessador_modelo)
+    # =========================================================================
+    # EXEMPLO: Como escolher o tipo de processamento
+    # =========================================================================
+    # Opções de tipo_scaler:
+    #   - 'standard': StandardScaler (z-score: média 0, std 1; padrão para OLS/Ridge/Lasso)
+    #   - 'robust'  : RobustScaler (mediana/IQR: ideal para outliers no mercado imobiliário)
+    #   - 'minmax'  : MinMaxScaler (normaliza entre [0, 1])
+    #   - 'maxabs'  : MaxAbsScaler (normaliza pelo valor absoluto máximo)
+    #
+    # Outros controles de processamento:
+    #   - escalar: True (modelos lineares/distância) ou False (modelos de árvore)
+    #   - drop_first: True (evita Dummy Variable Trap em OLS) ou False
+    #   - tamanho_teste: proporção do teste (ex: 0.2 = 20%)
+
+    # 1. Configurando o pré-processador com RobustScaler (resistente a imóveis atípicos):
+    preprocessador_modelo = Preprocessador(
+        tipo_scaler="robust",
+        escalar=True,
+        drop_first=True,
+        tamanho_teste=0.2,
+        random_state=42,
+    )
+
+    # 2. Injetando no Pipeline de ML:
+    pml = PipelineML(
+        carregador_dados=carregador,
+        preprocessador=preprocessador_modelo,
+        flag_processamento=True,
+    )
+
+    print(f"=== PIPELINE ML COM SCALER: '{preprocessador_modelo.tipo_scaler.upper()}' ===")
     pml.rodar_treinamento_simples()
+
