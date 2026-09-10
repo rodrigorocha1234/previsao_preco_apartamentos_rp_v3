@@ -1,4 +1,4 @@
-from typing import NamedTuple, Protocol, runtime_checkable
+from typing import Any, NamedTuple, Protocol, runtime_checkable
 import numpy as np
 import pandas as pd
 
@@ -9,6 +9,17 @@ class DadosProcessados(NamedTuple):
     x_teste: np.ndarray
     y_treino: np.ndarray
     y_teste: np.ndarray
+
+
+@runtime_checkable
+class IScaler(Protocol):
+    """Protocolo que declara a interface esperada de um transformador/scaler do scikit-learn."""
+
+    def fit_transform(self, X: Any, y: Any = None, *args: Any, **kwargs: Any) -> Any:
+        ...
+
+    def transform(self, X: Any, *args: Any, **kwargs: Any) -> Any:
+        ...
 
 
 @runtime_checkable

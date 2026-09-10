@@ -9,9 +9,10 @@ from sklearn.preprocessing import (
     StandardScaler,
 )
 
-from .ipreprocessador import DadosProcessados, IPreprocessador
+from .ipreprocessador import DadosProcessados, IPreprocessador, IScaler
 
 TipoScaler = Literal["standard", "minmax", "robust", "maxabs"]
+
 
 
 class Preprocessador(IPreprocessador):
@@ -63,7 +64,7 @@ class Preprocessador(IPreprocessador):
         if base is not None:
             self.base = base
 
-        self.__scaler: Any | None = None
+        self.__scaler: IScaler | None = None
         self.__colunas_features: list[str] = []
 
     # -------------------------------------------------------------------------
@@ -103,9 +104,10 @@ class Preprocessador(IPreprocessador):
         self.__tipo_scaler = novo_scaler
 
     @property
-    def scaler(self) -> Any | None:
+    def scaler(self) -> IScaler | None:
         """Retorna o scaler ajustado nos dados de treino, se houver escalonamento."""
         return self.__scaler
+
 
     @property
     def colunas_features(self) -> list[str]:
@@ -121,7 +123,7 @@ class Preprocessador(IPreprocessador):
     # Fábrica Interna de Scalers
     # -------------------------------------------------------------------------
 
-    def _criar_instancia_scaler(self, tipo: TipoScaler | Any | None = None) -> Any:
+    def _criar_instancia_scaler(self, tipo: TipoScaler | Any | None = None) -> IScaler:
         """Cria e retorna uma instância do scaler especificado."""
         alvo = tipo if tipo is not None else self.__tipo_scaler
 
@@ -133,13 +135,16 @@ class Preprocessador(IPreprocessador):
                 raise ValueError(
                     f"Tipo de scaler '{alvo}' inválido. Opções válidas: {opcoes}."
                 )
-            return classe_scaler()
+            instancia: IScaler = classe_scaler()
+            return instancia
         elif hasattr(alvo, "fit_transform") and hasattr(alvo, "transform"):
-            return alvo
+            return alvo  # type: ignore[no-any-return]
         elif callable(alvo):
-            return alvo
+            instancia_callable: IScaler = alvo()
+            return instancia_callable
 
         raise TypeError(f"Scaler inválido: {alvo}. Deve ser string ou objeto transformador.")
+
 
     # -------------------------------------------------------------------------
     # Métodos Granulares de Cada Etapa (Uso Individual)
@@ -242,10 +247,12 @@ class Preprocessador(IPreprocessador):
         - 'maxabs': MaxAbsScaler (escala pelo valor absoluto máximo)
         - Ou qualquer instância/classe customizada compatível com a API do scikit-learn.
         """
-        self.__scaler = self._criar_instancia_scaler(tipo_scaler)
-        x_treino_scaled = self.__scaler.fit_transform(x_treino)
-        x_teste_scaled = self.__scaler.transform(x_teste)
+        scaler: IScaler = self._criar_instancia_scaler(tipo_scaler)
+        x_treino_scaled = scaler.fit_transform(x_treino)
+        x_teste_scaled = scaler.transform(x_teste)
+        self.__scaler = scaler
         return x_treino_scaled, x_teste_scaled
+
 
     # Métodos específicos para cada tipo de scaler
     def escalonar_com_standard_scaler(
