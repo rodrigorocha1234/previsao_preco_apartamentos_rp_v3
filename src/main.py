@@ -579,15 +579,12 @@ if __name__ == '__main__':
     # 3. Configurando a Estratégia de Modelo (Regressão Linear Múltipla com múltiplas features):
     estrategia_linear_multipla = EstrategiaRegressaoLinearMultipla()
 
-    # 4. Configurando o Avaliador Especializado para Regressão Linear Múltipla:
-    avaliador_modelo = AvaliadorRegressaoLinearMultipla()
-
-    # 5. Injetando no Pipeline de ML:
+    # 4. Injetando no Pipeline de ML com o Avaliador criado via AvaliadorFactory:
     pml = PipelineML(
         carregador_dados=carregador,
         preprocessador=preprocessador_modelo,
         estrategia_modelo=estrategia_linear_multipla,
-        avaliador=avaliador_modelo,
+        avaliador=AvaliadorFactory.criar_avaliador(estrategia_linear_multipla),
         observadores=[observador_mlflow],
         flag_processamento=True,
     )
