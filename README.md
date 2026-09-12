@@ -10,6 +10,7 @@ Sistema modular de Machine Learning para previsão de preços de apartamentos em
 - [Estrutura de Diretórios](#-estrutura-de-diretórios)
 - [Conjunto de Dados](#-conjunto-de-dados)
 - [Pipeline de Pré-processamento](#-pipeline-de-pré-processamento)
+  - [Pré-processamento Recomendado por Modelo](#-pré-processamento-recomendado-por-modelo-de-regressão)
 - [Estratégias de Modelagem](#-estratégias-de-modelagem)
   - [Estratégia de Regressão Linear](#-estratégia-de-regressão-linear-estrategiaregressaolinear)
   - [Estratégia de Regressão Linear Múltipla](#-estratégia-de-regressão-linear-múltipla-estrategiaregressaolinearmultipla)
@@ -21,9 +22,15 @@ Sistema modular de Machine Learning para previsão de preços de apartamentos em
     - [Diagnóstico no Modelo Múltiplo](#2-diagnóstico-no-modelo-de-regressão-linear-múltipla-multivariada-8-features)
     - [Comparativo Consolidado de Ajuste](#3-comparativo-consolidado-de-diagnóstico-de-ajuste-simples-vs-múltipla)
 - [Avaliação de Negócio e Saúde Financeira](#-avaliação-de-negócio-e-saúde-financeira-da-imobiliária)
+  - [Como o Cálculo é Feito Pós-Treinamento](#-como-o-cálculo-de-saúde-financeira-é-feito-pós-treinamento)
   - [Modelo de Regressão Linear Simples](#1-modelo-de-regressão-linear-simples-univariada-metragem)
   - [Modelo de Regressão Linear Múltipla](#2-modelo-de-regressão-linear-múltipla-multivariada-características--zonas)
   - [Comparativo Executivo: Simples vs. Múltipla](#3-comparativo-executivo-consolidado-regressão-linear-simples-vs-múltipla)
+- [Segregação dos Avaliadores por Modelo](#-segregação-dos-avaliadores-por-modelo-de-regressão)
+  - [AvaliadorBase](#1-avaliadorbase-srcavaliadoravaliador_basepy)
+  - [AvaliadorRegressaoLinear (Simples)](#2-avaliadorregressaolinear-srcavaliadoravaliador_regressao_linearpy)
+  - [AvaliadorRegressaoLinearMultipla (Múltipla)](#3-avaliadorregressaolinearmultipla-srcavaliadoravaliador_regressao_linear_multiplapy)
+  - [AvaliadorFactory](#4-avaliadorfactory-srcavaliadoravaliador_factorypy)
 - [Infraestrutura MLOps (Docker)](#-infraestrutura-mlops-docker)
 - [Padrão Observer e Rastreamento com MLflow](#-padrão-observer-e-rastreamento-com-mlflow)
 - [Instalação e Execução](#-instalação-e-execução)
@@ -42,7 +49,7 @@ Diferenciais da versão 3:
 - **Regressão Linear Múltipla**: modelagem estatística multivariada com suporte a restrições de positividade econômica e intercepto livre.
 - **Prevenção de vazamento de dados (*Data Leakage*)**: padronização e imputações ajustadas estritamente nos dados de treino.
 - **Prevenção da *Dummy Variable Trap***: codificação de variáveis categóricas usando One-Hot Encoding com descarte da primeira categoria (`drop_first=True`), garantindo que modelos lineares OLS não sofram com multicolinearidade perfeita.
-- **Testabilidade**: cobertura de 42 testes unitários e tipagem estática estrita com `mypy`.
+- **Testabilidade**: cobertura de 53 testes unitários e tipagem estática estrita com `mypy`.
 
 ---
 
@@ -111,6 +118,51 @@ classDiagram
         +treinar_modelo_simples(x_treino, y_treino) IRegressor
     }
 
+    class AvaliadorBase {
+        <<Abstract>>
+        +nome_modelo: str
+        +avaliar_metricas_regressao() dict
+        +avaliar_saude_financeira() dict
+        +gerar_relatorio_financeiro() str
+        +avaliar_diagnostico_ajuste() dict
+        +gerar_relatorio_diagnostico_ajuste() str
+        +gerar_relatorio_validacao_cruzada() str
+        +formatar_equacao_reta()* str
+        +gerar_grafico_diagnostico_ajuste()* Figure
+        +avaliar_importancia_features()* dict
+        +gerar_relatorio_importancia_features()* str
+        +gerar_grafico_importancia_features()* Figure
+    }
+
+    class AvaliadorRegressaoLinear {
+        +nome_modelo: str = "Regressão Linear Simples"
+        +formatar_equacao_reta() str
+        +gerar_grafico_diagnostico_ajuste() Figure
+        +avaliar_importancia_features() dict
+        +gerar_grafico_importancia_features() Figure
+    }
+
+    class AvaliadorRegressaoLinearMultipla {
+        +nome_modelo: str = "Regressão Linear Múltipla"
+        +formatar_equacao_reta() str
+        +gerar_grafico_diagnostico_ajuste() Figure
+        +avaliar_importancia_features() dict
+        +gerar_grafico_importancia_features() Figure
+    }
+
+    class Avaliador {
+        <<Fachada Compatível>>
+        +formatar_equacao_reta() str
+        +gerar_grafico_diagnostico_ajuste() Figure
+        +avaliar_importancia_features() dict
+        +gerar_grafico_importancia_features() Figure
+    }
+
+    class AvaliadorFactory {
+        <<Factory Method>>
+        +criar_avaliador(estrategia_ou_modelo, n_features) AvaliadorBase
+    }
+
     class IObservadorPipeline {
         <<Protocol>>
         +atualizar(evento, dados) void
@@ -133,6 +185,7 @@ classDiagram
         -ICarregador __carregador
         -IPreprocessador __preprocessador
         -EstrategiaModelo __estrategia_modelo
+        -AvaliadorBase __avaliador
         -list~IObservadorPipeline~ __observadores
         +adicionar_observador(observador) void
         +remover_observador(observador) void
@@ -149,11 +202,16 @@ classDiagram
     EstrategiaModelo <|-- EstrategiaRegressaoLinear
     EstrategiaModelo <|-- EstrategiaRegressaoLinearMultipla
     EstrategiaModelo o-- IRegressor
+    AvaliadorBase <|-- AvaliadorRegressaoLinear
+    AvaliadorBase <|-- AvaliadorRegressaoLinearMultipla
+    AvaliadorBase <|-- Avaliador
+    AvaliadorFactory ..> AvaliadorBase : instancia
     ISujeitoPipeline <|.. PipelineML
     IObservadorPipeline <|.. ObservadorMLflow
     PipelineML o-- ICarregador
     PipelineML o-- IPreprocessador
     PipelineML o-- EstrategiaModelo
+    PipelineML o-- AvaliadorBase
     PipelineML o-- IObservadorPipeline
 ```
 
@@ -167,9 +225,14 @@ previsao_preco_apartamentos_rp_v3/
 ├── docs/                   # Dados e artefatos de dados
 │   └── bairro_final_v3_engineered_bkp.xlsx
 ├── src/                    # Código-fonte principal
-│   ├── avaliador/          # Métricas e interfaces de avaliação
-│   │   ├── avaliador.py
-│   │   └── imodelo_previsor.py
+│   ├── avaliador/          # Métricas, diagnósticos e avaliadores segregados
+│   │   ├── __init__.py
+│   │   ├── avaliador_base.py                     # Classe base abstrata (AvaliadorBase)
+│   │   ├── avaliador_regressao_linear.py          # Especializado em Regressão Linear Simples
+│   │   ├── avaliador_regressao_linear_multipla.py # Especializado em Regressão Linear Múltipla
+│   │   ├── avaliador_factory.py                   # Fábrica dinâmica (AvaliadorFactory)
+│   │   ├── avaliador.py                          # Fachada polimórfica e compatível
+│   │   └── imodelo_previsor.py                    # Protocolo IModeloPrevisor
 │   ├── carregador/         # Carregamento de dados (I/O)
 │   │   ├── carregador_csv.py
 │   │   └── icarregador.py
@@ -188,7 +251,7 @@ previsao_preco_apartamentos_rp_v3/
 │   │   ├── ipreprocessador.py
 │   │   └── preprocessador.py
 │   └── main.py             # Ponto de entrada e orquestração (PipelineML)
-├── tests/                  # Testes unitários automatizados (42 testes)
+├── tests/                  # Testes unitários automatizados (53 testes)
 │   ├── test_avaliador.py
 │   ├── test_estrategia_regressao_linear_multipla.py
 │   ├── test_grid_search.py
@@ -251,6 +314,141 @@ Como a base de dados já é fornecida previamente tratada e higienizada, a class
 3. **`dividir_treino_teste(x, y)`**: Particiona os dados em `(x_treino, x_teste, y_treino, y_teste)`.
 4. **`escalonar_dados(x_treino, x_teste, tipo_scaler=None)`**: Aplica o scaler selecionado.
 5. **`realizar_preprocessamento(base=None)`**: Orquestra o fluxo completo e retorna a estrutura `DadosProcessados`.
+
+---
+
+### 🎯 Pré-processamento Recomendado por Modelo de Regressão
+
+A escolha das configurações de pré-processamento (especialmente **escalonamento numérico** e **codificação de variáveis categóricas**) afeta diretamente a convergência matemática, a interpretabilidade dos coeficientes e a estabilidade numérica de cada algoritmo. 
+
+Abaixo está o guia técnico oficial do projeto, detalhando as configurações recomendadas da classe [`Preprocessador`](src/processador/preprocessador.py) para cada família de modelo:
+
+| Modelo de Regressão | Escalonamento (`escalar`) | Scaler Recomendado (`tipo_scaler`) | Codificação Dummy (`drop_first`) | Racional Técnico e Matemático | Impacto Prático na Operação Imobiliária |
+| :--- | :---: | :---: | :---: | :--- | :--- |
+| **Regressão Linear Simples** *(Univariada: Metragem)* | **`False`** (ou `True` opcional) | `"robust"` *(se ativo)* | **`True`** *(neutro / N/A)* | Em OLS univariado, a reta ajusta-se analiticamente por forma fechada sem otimização iterativa. Desativar a escala preserva a interpretabilidade de $\beta_1$ diretamente em **R$/m²**. Se ativo, `RobustScaler` mitiga alavancagem de coberturas extremas. | **Interpretabilidade Imediata**: O corretor faz contas diretas no bolso: $\widehat{y} = 216.075 + 2.667 \times \text{Metragem}$. |
+| **Regressão Linear Múltipla** *(Multivariada: 8 features)* | **`True`** *(Recomendado)* | **`"robust"`** *(Padrão-Ouro)* | **`True`** *(Mandatório)* | Features em ordens de grandeza díspares (quartos: 1–4 vs. metragem: 30–400 vs. dummies: 0–1). `RobustScaler` (mediana e IQR) impede que outliers de metragem dominem o cálculo e viabiliza a comparação justa dos coeficientes. `drop_first=True` é obrigatório para evitar a **Dummy Variable Trap** ($\det(X^TX) \approx 0$). | **Análise de Sensibilidade Justa**: Permite mensurar que 1 vaga adicional (+R$ 240,8 mil) impacta mais que 1 banheiro (+R$ 165,6 mil), blindando a matriz contra multicolinearidade de zona. |
+| **Regressões Regularizadas** *(Ridge / Lasso / ElasticNet)* | **`True`** *(Mandatório)* | **`"standard"`** ou **`"robust"`** | **`True`** *(Padrão)* | A penalização matemática $\lambda \sum \beta_j^2$ (Ridge) ou $\lambda \sum \|\beta_j\|$ (Lasso) penaliza o tamanho absoluto dos coeficientes. Sem padronização, atributos com escalas numéricas menores (ex: quartos) são penalizados desproporcionalmente antes de atributos com escalas grandes (metragem). | **Seleção de Variáveis Não-Enviesada**: Evita que o Lasso zere atributos nobres por mera distorção de escala métrica. |
+| **Support Vector Regression (SVR)** *(Kernel RBF / Linear / Poli)* | **`True`** *(Estritamente Mandatório)* | **`"standard"`** ou **`"robust"`** | **`True`** *(Recomendado)* | O kernel RBF baseia-se na distância euclidiana $\|\mathbf{x}_i - \mathbf{x}_j\|^2$. Sem padronização, a metragem (30 a 400 m²) domina 99.9% da distância quadrática, anulando completamente quartos, vagas e zonas. Os hiperparâmetros $C$, $\epsilon$ e $\gamma$ tornam-se incalibráveis. | **Fronteira Não-Linear Confiável**: Assegura que apartamentos com mesmo número de vagas e banheiros agrupem-se adequadamente no espaço dual dos vetores de suporte. |
+| **Redes Neurais Artificiais (ANN)** *(MLPRegressor / Deep Learning)* | **`True`** *(Estritamente Crítico)* | **`"standard"`** ou **`"minmax"`** | **`False`** *(Recomendado)* | A retropropagação (*Backpropagation*) usa derivadas parciais proporcionais à entrada ($\frac{\partial \mathcal{L}}{\partial w} \propto x$). Entradas não-escalonadas geram explosão ou desaparecimento de gradientes (*Exploding/Vanishing Gradients*) e superfícies de custo em ravinas, impedindo a convergência do Adam/SGD. | **Convergência Estável do Treinamento**: Garante que os neurônios aprendam pesos balanceados para features discretas e contínuas sem congelar as funções de ativação. |
+| **Modelos Baseados em Árvores** *(Random Forest / XGBoost / LightGBM)* | **`False`** *(Desnecessário)* | Nenhum / N/A | **`False`** *(Recomendado)* | Árvores de decisão são invariantes a transformações monotônicas de escala (as divisões particionam os nós por desigualdades $X_j \le c$). `drop_first=False` preserva a dummy explícita para cada zona, permitindo divisões ortogonais diretas sem exigir nós adicionais para a categoria base. | **Maior Poder Preditivo Não-Linear**: A árvore pode criar regras de corte diretas para "Zona Sul = 1" ou "Zona Centro = 1" de forma isolada e expressiva. |
+
+---
+
+#### 1. Regressão Linear Simples (Univariada)
+- **Configuração Indicada**:
+  ```python
+  preprocessador_simples = Preprocessador(
+      tipo_scaler="robust",
+      escalar=False,       # Mantém a escala bruta para interpretação direta em R$/m²
+      drop_first=True,
+      tamanho_teste=0.2,
+      random_state=42,
+  )
+  ```
+- **Por que `escalar=False`?**
+  Na regressão simples ($y = \beta_0 + \beta_1 X$), o coeficiente angular $\beta_1 = \frac{\operatorname{Cov}(X, y)}{\operatorname{Var}(X)}$ expressa a taxa de valorização marginal em unidades reais (R$/m²). Como não há outras variáveis competindo na regressão, a magnitude numérica não sofre competição dimensional. Se optar por normalizar, deve-se utilizar `tipo_scaler="robust"` para que imóveis atípicos (ex: coberturas > 300 m²) não influenciem excessivamente a inclinação da reta.
+
+---
+
+#### 2. Regressão Linear Múltipla (Multivariada)
+- **Configuração Indicada (Padrão do Projeto)**:
+  ```python
+  preprocessador_multiplo = Preprocessador(
+      tipo_scaler="robust",
+      escalar=True,        # Padronização multivariada para comparação de coeficientes
+      drop_first=True,     # Mandatório: Previne a Dummy Variable Trap (Zona Centro = Base)
+      tamanho_teste=0.2,
+      random_state=42,
+  )
+  ```
+- **Por que `escalar=True` com `tipo_scaler="robust"`?**
+  1. **Incompatibilidade de Grandezas**: O modelo combina contagens discretas pequenas (Quartos: 1–4, Banheiros: 1–5, Vagas: 1–5), área contínua moderada/alta (Metragem: 30–400 m²) e variáveis indicadoras binárias (Dummies de Zona: 0 ou 1). Sem escalonamento, um acréscimo unitário na metragem teria um coeficiente numericamente menor frente ao coeficiente de uma vaga de garagem, impedindo qualquer inferência direta sobre **Feature Importance**.
+  2. **Robustez a Outliers Imobiliários**: O `StandardScaler` tradicional usa média e desvio padrão, sendo vulnerável a vendas de coberturas de altíssimo luxo na Zona Sul. O `RobustScaler` centraliza os dados na **mediana** e divide pelo **Intervalo Interquartil ($IQR = Q_3 - Q_1$)**, garantindo que os 50% centrais dos apartamentos guiem a transformação de escala.
+- **Por que `drop_first=True` é mandatório?**
+  Se codificássemos as 4 zonas em 4 colunas mantendo o intercepto livre ($\beta_0$), a soma das 4 colunas seria sempre igual a 1 para qualquer apartamento:
+  $$\text{Zona\_Leste} + \text{Zona\_Norte} + \text{Zona\_Oeste} + \text{Zona\_Sul} + \text{Zona\_Centro} = 1$$
+  Isso geraria **multicolinearidade perfeita**, tornando a matriz $X^T X$ não-invertível ou gerando instabilidade catastrófica de erros padrão (determinante próximo de zero). Ao descartar a primeira categoria (`Zona_Centro`), ela passa a ser a **categoria base** absorvida pelo intercepto $\beta_0$.
+
+---
+
+#### 3. Modelos Regularizados (Ridge, Lasso e ElasticNet)
+- **Configuração Indicada**:
+  ```python
+  preprocessador_regularizado = Preprocessador(
+      tipo_scaler="standard", # Ou "robust"
+      escalar=True,          # Estritamente Mandatório para modelos com penalização L1/L2
+      drop_first=True,
+      tamanho_teste=0.2,
+      random_state=42,
+  )
+  ```
+- **Por que o escalonamento é obrigatório?**
+  A função de custo dos modelos regularizados adiciona um termo de penalização à soma dos quadrados dos resíduos:
+  $$\mathcal{L}_{\text{Ridge}} = \sum_{i=1}^n (y_i - \widehat{y}_i)^2 + \lambda \sum_{j=1}^p \beta_j^2$$
+  $$\mathcal{L}_{\text{Lasso}} = \sum_{i=1}^n (y_i - \widehat{y}_i)^2 + \lambda \sum_{j=1}^p |\beta_j|$$
+  Como a penalidade afeta igualmente qualquer coeficiente $\beta_j$ independentemente da unidade física da variável, uma variável em escala pequena (cujo $\beta$ seja numericamente enorme) seria aniquilada pelo Lasso, enquanto variáveis em escala grande (com $\beta$ pequeno) escapariam da penalidade. O escalonamento garante que todos os preditores concorram em igualdade de condições.
+
+---
+
+#### 4. Support Vector Regression (SVR)
+- **Configuração Indicada**:
+  ```python
+  preprocessador_svr = Preprocessador(
+      tipo_scaler="standard", # Ou "robust" para blindagem contra coberturas extremas
+      escalar=True,          # ESTRITAMENTE MANDATÓRIO para SVR
+      drop_first=True,       # Evita redundância dimensional na métrica euclidiana
+      tamanho_teste=0.2,
+      random_state=42,
+  )
+  ```
+- **Por que o escalonamento é estritamente obrigatório no SVR?**
+  1. **Distorção Geométrica do Kernel RBF**: O kernel de base radial Gaussiana mapeia amostras calculando a distância euclidiana ao quadrado no espaço de atributos:
+     $$K(\mathbf{x}_i, \mathbf{x}_j) = \exp\left(-\gamma \|\mathbf{x}_i - \mathbf{x}_j\|^2\right) = \exp\left(-\gamma \sum_{k=1}^p (x_{ik} - x_{jk})^2\right)$$
+     Se a variável $\text{Metragem}$ varia entre 30 e 400 ($\Delta \approx 370$) e $\text{Quartos}$ varia entre 1 e 4 ($\Delta \approx 3$), a diferença quadrática da metragem será $(370)^2 \approx 136.900$, enquanto a dos quartos será no máximo $(3)^2 = 9$. Consequentemente, **a distância euclidiana será dominada em mais de 99.9% pela metragem**, tornando quartos, vagas e localização matematicamente invisíveis para o SVR.
+  2. **Calibração do Tubo Insensível ($\epsilon$) e Penalidade ($C$)**: O SVR ajusta um tubo de tolerância $\epsilon$ (*epsilon-insensitive tube*) onde erros não são penalizados. Se os dados não estiverem em escala unitária padronizada, o parâmetro $\epsilon$ não possui significado geométrico uniforme e a busca em grade de hiperparâmetros (*GridSearchCV*) torna-se instável.
+- **Por que `drop_first=True`?**
+  No cálculo da métrica de distância $\|\mathbf{x}_i - \mathbf{x}_j\|$, manter todas as colunas dummies duplica a distância entre categorias distintas, enquanto descartar a primeira coluna mantém a geometria ortogonal mínima no espaço vetorial.
+
+---
+
+#### 5. Redes Neurais Artificiais para Regressão (MLPRegressor / Deep Learning)
+- **Configuração Indicada**:
+  ```python
+  preprocessador_rede_neural = Preprocessador(
+      tipo_scaler="standard", # StandardScaler (média 0, var 1) ideal para ReLU/LeakyReLU; ou "minmax" para Sigmoid/Tanh
+      escalar=True,          # ESTRITAMENTE CRÍTICO: Previne explosão e estagnação de gradientes
+      drop_first=False,      # Recomendado: Permite pesos lineares explícitos para todas as categorias
+      tamanho_teste=0.2,
+      random_state=42,
+  )
+  ```
+- **Por que o escalonamento é estritamente crítico em Redes Neurais?**
+  1. **Dinâmica do Gradiente Descendente e Backpropagation**: Em redes multicamadas (*Multi-Layer Perceptrons*), os pesos $\mathbf{W}^{(l)}$ são atualizados recursivamente pelo gradiente da função de perda:
+     $$\mathbf{W}^{(l)} \leftarrow \mathbf{W}^{(l)} - \eta \frac{\partial \mathcal{L}}{\partial \mathbf{W}^{(l)}} \quad \text{onde} \quad \frac{\partial \mathcal{L}}{\partial w_{jk}^{(l)}} \propto a_k^{(l-1)}$$
+     Como o gradiente do peso é diretamente proporcional ao valor de ativação da camada anterior ($a_k$), entradas com valores na ordem de centenas (Metragem $\approx 250$) produzem gradientes ordens de magnitude maiores do que entradas discretas (Quartos $\approx 2$). Isso causa **oscilações descontroladas ou divergência numérica (*Exploding Gradients*)**.
+  2. **Taxa de Aprendizado Única ($\eta$)**: Otimizadores (como Adam ou SGD) aplicam a taxa de aprendizado de forma compartilhada. Em superfícies de custo não-escalonadas, formam-se ravinas extremamente estreitas e alongadas (*ill-conditioned loss surface*): o otimizador oscila violentamente na direção das features de grande escala enquanto praticamente não caminha na direção dos atributos de pequena escala.
+  3. **Saturação de Funções de Ativação (*Vanishing Gradients*)**: Entradas com valores elevados deslocam ativações sigmoides e tangentes hiperbólicas para suas caudas assintóticas, onde a derivada $\sigma'(z) \approx 0$, congelando o fluxo de retropropagação. No caso de ReLU, ativações fortemente negativas podem levar ao problema de neurônios inativos (*Dying ReLU*).
+  4. **Alinhamento com Inicializações He / Xavier**: Métodos modernos de inicialização de pesos (He Normal para ReLU e Xavier/Glorot para Tanh) assumem matematicamente que as entradas possuem **média 0 e variância unitária** ($\mathbb{E}[x] = 0, \operatorname{Var}(x) = 1$). O `StandardScaler` garante exatamente essa hipótese estatística.
+- **Por que `drop_first=False` é recomendado em Redes Neurais?**
+  Ao contrário dos regressores OLS (que exigem matriz de covariância invertível), redes neurais adicionam termos de viés (*bias*) em cada neurônio e utilizam regularização de pesos $L_2$ (*Weight Decay*). Manter todas as dummies (`drop_first=False`) fornece uma entrada dedicada para cada zona, permitindo que a primeira camada aprenda representações de *embedding* lineares diretas para cada localização geográfica sem impor um viés assimétrico sobre a categoria base.
+
+---
+
+#### 6. Modelos Baseados em Árvores (Random Forest, XGBoost, LightGBM)
+- **Configuração Indicada**:
+  ```python
+  preprocessador_arvores = Preprocessador(
+      tipo_scaler="robust",
+      escalar=False,       # Desnecessário: Árvores dividem nós por limites de ordenação (X_j <= limiar)
+      drop_first=False,    # Recomendado: Preserva nós explícitos para todas as categorias
+      tamanho_teste=0.2,
+      random_state=42,
+  )
+  ```
+- **Por que `escalar=False`?**
+  Árvores de decisão realizam cortes baseados em ordenação de valores ($X_j \le \text{limiar}$). Qualquer transformação monotônica de escala não altera a posição relativa das amostras, tornando o escalonamento inócuo.
+- **Por que `drop_first=False`?**
+  Diferente de modelos lineares, árvores não sofrem com a *Dummy Variable Trap* porque não invertem matrizes de covariância. Preservar todas as dummies permite que o algoritmo isole diretamente uma categoria em um único nó (ex: $\text{Zona\_Centro} = 1$), em vez de exigir que a árvore deduza a categoria base por exclusão mútua de todas as demais.
 
 
 ---
@@ -776,6 +974,126 @@ Para responder a essas perguntas, a classe [`Avaliador`](src/avaliador/avaliador
 
 ---
 
+### 🧮 Como o Cálculo de Saúde Financeira é Feito (Pós-Treinamento)
+
+Logo após o treinamento do modelo pelo método `rodar_treinamento_simples` do [`PipelineML`](src/main.py), o sistema não se limita a computar erros puramente matemáticos. Ele submete os preços estimados a uma **esteira analítica de saúde financeira** implementada na classe [`Avaliador`](src/avaliador/avaliador.py).
+
+#### 1. Fluxo de Execução Pós-Treinamento no Orquestrador
+
+```mermaid
+flowchart LR
+    M["1. Modelo Treinado<br/>(x_treino, y_treino)"] --> P["2. Inferência no Teste<br/>y_pred = modelo.predict(x_teste)"]
+    P --> R["3. Vetorização de Resíduos<br/>e_i = (y_pred - y_real) / y_real"]
+    R --> F["4. Avaliador de Saúde Financeira<br/>(Avaliador.avaliar_saude_financeira)"]
+    F --> ML["5. Registro no MLflow<br/>(ObservadorMLflow)"]
+```
+
+1. **Inferência em Amostra Não-Vista**: O regressor treinado gera predições $\widehat{y}_i$ para todos os $N = 1.143$ apartamentos do conjunto de teste independente (`dados.x_teste`).
+2. **Vetorização de Resíduos Monetários e Percentuais**: O NumPy processa instantaneamente as diferenças em Reais e percentuais em relação ao valor real de mercado ($y_i$).
+3. **Extração das Métricas Financeiras e de Risco**: O método `avaliar_saude_financeira` calcula os impactos operacionais da precificação.
+4. **Governança no MLflow**: Os indicadores e o relatório formatado (`relatorio_saude_financeira.txt`) são persistidos automaticamente no servidor de MLOps.
+
+---
+
+#### 2. Fórmulas e Equações Matemáticas Passo a Passo
+
+Cada indicador de negócio é calculado com base nas seguintes formulações estatístico-financeiras:
+
+##### A. Resíduo Percentual Relativo Individual ($e_i$):
+$$e_i = \frac{\widehat{y}_i - y_i}{y_i}$$
+
+- Se $e_i > 0$: Imóvel **superavaliado** pelo modelo (risco de sobrepreço).
+- Se $e_i < 0$: Imóvel **subavaliado** pelo modelo (risco de defasagem).
+
+##### B. Viés Sistemático do Modelo ($\text{Bias}_{\text{mediana}}$):
+$$\text{Viés} = \operatorname{mediana}(e_1, e_2, \dots, e_N) \times 100\%$$
+
+> **Por que a mediana?** Diferente da média aritmética simples (que é sensível a coberturas atípicas), a mediana reflete a tendência central legítima da imobiliária: se o catálogo tende sistemicamente para o sobrepreço (+viés) ou para a subprecificação (-viés).
+
+##### C. Risco de Superavaliação (*Overpricing / Risco de Encalhe em Estoque*):
+$$\text{Risco Superavaliação} = \left( \frac{1}{N} \sum_{i=1}^N \mathbb{I}(e_i > +0.10) \right) \times 100\%$$
+
+- **Conceito de Negócio**: Percentual de apartamentos anunciados mais de **+10% acima do mercado**.
+- **Impacto**: Afasta compradores qualificados, infla os *Days on Market* (tempo de anúncio ativo), acumula despesas de condomínio/IPTU para o proprietário e gera custos de marketing de captação sem conversão.
+
+##### D. Risco de Subavaliação (*Underpricing / Dinheiro Deixado na Mesa*):
+$$\text{Risco Subavaliação} = \left( \frac{1}{N} \sum_{i=1}^N \mathbb{I}(e_i < -0.10) \right) \times 100\%$$
+
+- **Conceito de Negócio**: Percentual de imóveis avaliados mais de **-10% abaixo do mercado**.
+- **Impacto**: Prejuízo patrimonial para o proprietário vendedor e perda direta de receita de comissão da imobiliária (*money left on the table*).
+
+##### E. Faixas de Desconto Sugeridas para a Mesa de Negociação:
+Para garantir que o corretor tenha margem de fechamento sem destruir a margem do cliente, o sistema define duas balizas móveis com travas operacionais (*clipping*):
+
+- **Desconto Mínimo Sugerido** (Percentil 25 dos desvios absolutos, limitado entre 3% e 10%):
+  $$\text{Desconto Mínimo} = \operatorname{clip}\left(\operatorname{Percentil}_{25}(|e|) \times 100\%, 3.0\%, 10.0\%\right)$$
+- **Desconto Máximo Seguro** (Percentil 50 / Mediana dos desvios absolutos, limitado entre 5% e 15%):
+  $$\text{Desconto Máximo} = \operatorname{clip}\left(\operatorname{Percentil}_{50}(|e|) \times 100\%, 5.0\%, 15.0\%\right)$$
+
+##### F. Assertividade Comercial em Faixas de Tolerância (*Hit Rates*):
+$$\text{Assertividade}_{K\%} = \left( \frac{1}{N} \sum_{i=1}^N \mathbb{I}(|e_i| \le K\%) \right) \times 100\% \quad \text{para } K \in \{5\%, 10\%, 15\%\}$$
+
+Calcula a proporção exata de imóveis cuja estimativa do algoritmo recai dentro da tolerância comercial aceita pelo mercado (±5%, ±10% e ±15%).
+
+##### G. Desvio Médio de Comissão da Imobiliária (Alíquota Padrão $\tau = 6\%$):
+$$\Delta \text{Comissão}_i = |(0.06 \times \widehat{y}_i) - (0.06 \times y_i)| = 0.06 \times |\widehat{y}_i - y_i|$$
+
+$$\overline{\Delta \text{Comissão}} = \frac{1}{N} \sum_{i=1}^N \Delta \text{Comissão}_i = 0.06 \times \text{MAE}$$
+
+Mede a volatilidade média absoluta em Reais (R$) na receita de corretagem por apartamento transacionado.
+
+---
+
+#### 3. Implementação Vetorizada no Código Fonte (`Avaliador.avaliar_saude_financeira`)
+
+Abaixo está o trecho real em Python implementado na classe [`Avaliador`](src/avaliador/avaliador.py), demonstrando a vetorização de alto desempenho em NumPy:
+
+```python
+def avaliar_saude_financeira(
+    self,
+    y_real: np.ndarray | pd.Series,
+    y_pred: np.ndarray | pd.Series,
+    taxa_comissao: float = 0.06,
+) -> dict[str, Any]:
+    y_r = np.asarray(y_real, dtype=float).ravel()
+    y_p = np.asarray(y_pred, dtype=float).ravel()
+
+    # 1. Resíduo percentual relativo: (predito - real) / real
+    erros_percentuais = (y_p - y_r) / y_r
+
+    # 2. Faixas de desconto sugeridas (P25 e P50 com travas de segurança)
+    desconto_min = float(np.clip(np.percentile(np.abs(erros_percentuais), 25) * 100, 3.0, 10.0))
+    desconto_max = float(np.clip(np.percentile(np.abs(erros_percentuais), 50) * 100, 5.0, 15.0))
+
+    # 3. Assertividade em faixas de tolerância comercial (5%, 10%, 15%)
+    assertividade_5 = float(np.mean(np.abs(erros_percentuais) <= 0.05) * 100)
+    assertividade_10 = float(np.mean(np.abs(erros_percentuais) <= 0.10) * 100)
+    assertividade_15 = float(np.mean(np.abs(erros_percentuais) <= 0.15) * 100)
+
+    # 4. Riscos de superavaliação (encalhe) e subavaliação (dinheiro na mesa)
+    risco_superavaliacao = float(np.mean(erros_percentuais > 0.10) * 100)
+    risco_subavaliacao = float(np.mean(erros_percentuais < -0.10) * 100)
+
+    # 5. Desvio médio na receita de comissão da imobiliária
+    comissao_real = y_r * taxa_comissao
+    comissao_prevista = y_p * taxa_comissao
+    desvio_medio_comissao = float(np.mean(np.abs(comissao_prevista - comissao_real)))
+
+    return {
+        "faixa_desconto_sugerida_min_pct": round(desconto_min, 2),
+        "faixa_desconto_sugerida_max_pct": round(desconto_max, 2),
+        "mediana_erro_percentual_pct": round(float(np.median(erros_percentuais) * 100), 2),
+        "risco_superavaliacao_pct": round(risco_superavaliacao, 2),
+        "risco_subavaliacao_pct": round(risco_subavaliacao, 2),
+        "assertividade_tolerancia_5pct": round(assertividade_5, 2),
+        "assertividade_tolerancia_10pct": round(assertividade_10, 2),
+        "assertividade_tolerancia_15pct": round(assertividade_15, 2),
+        "desvio_medio_comissao_reais": round(desvio_medio_comissao, 2),
+    }
+```
+
+---
+
 ### 1. Modelo de Regressão Linear Simples (Univariada: Metragem)
 
 O modelo de Regressão Linear Simples utiliza exclusivamente a **Metragem ($\text{m}^2$)** como variável preditora para estimar o valor venal do imóvel.
@@ -813,6 +1131,21 @@ $$\widehat{y}_{\text{norm}} = 373.443,66 + 120.026,91 \times \text{Metragem}_{\t
 | **Risco de Subavaliação (< -10%)**  | **23.62%** | Dinheiro deixado na mesa em quase um quarto da carteira. |
 | **Desvio Médio de Comissão (6%)**   | **R$ 11.927,05** | Oscilação de quase **R$ 12 mil por venda**, gerando extrema instabilidade no fluxo de caixa. |
 | **Assertividade Comercial ($\pm 10\%$)** | **10.94%** | Apenas **1 a cada 10 apartamentos** cai na faixa comercial aceitável. |
+
+#### E. Importância de Recursos (Feature Importance) e Análise de Sensibilidade:
+
+No modelo univariado, a **Metragem ($\text{m}^2$)** é a única variável disponível para predição, concentrando integralmente todo o peso explicativo.
+
+##### 📋 Tabela de Feature Importance (Regressão Simples):
+
+| Rank | Feature | Queda no $R^2$ Teste (%) | Peso Relativo Coef (%) | Coef. Escalonado (R$) | Leitura de Negócio |
+| :---: | :--- | :---: | :---: | :---: | :--- |
+| **🥇 1º** | **Metragem ($\text{m}^2$)** | **53.70% (±2.13%)** | **100.00%** | **+R$ 120.026,91** | **Dependência Unidirecional Absoluta**: Se a metragem for permutada ou omitida, o modelo perde toda a capacidade de precificação. |
+
+##### 🖼️ Gráfico de Importância de Recursos no MLflow:
+O gráfico gerado pelo método [`gerar_grafico_importancia_features`](src/avaliador/avaliador.py) é registrado de forma nativa no **MLflow** como `graficos/importancia_features.png`:
+- Exibe o impacto de 100% de peso relativo e a perda de **53.70 p.p. de $R^2$** ao permutar a feature no conjunto de teste independente.
+- **Risco de Gestão**: Concentrar 100% da estimativa em uma única dimensão cria um modelo extremamente frágil à presença de reformas, suítes e valorização por localização.
 
 ---
 
@@ -875,6 +1208,34 @@ $$\widehat{y}_{\text{norm}} = 268.803,93 - 40.276,44 \cdot X'_1 + 165.643,22 \cd
 | **Desvio Médio de Comissão (6%)**   | **R$ 6.680,50** | Redução de **44% na oscilação da comissão** (economia de R$ 5.246,55 por imóvel). |
 | **Assertividade Comercial ($\pm 10\%$)** | **27.12%** | Quase o triplo de fechamentos dentro da tolerância comercial em relação à simples. |
 
+#### E. Importância de Recursos (Feature Importance) e Gráfico:
+
+Na modelagem multivariada com 8 features, a relevância de cada atributo é mensurada sob duas óticas analíticas complementares:
+1. **Permutation Importance no Teste ($N = 1.143$)**: Mede a queda real no score $R^2$ quando a feature é aleatoriamente embaralhada (indica a dependência empírica do modelo).
+2. **Peso Relativo dos Coeficientes no Espaço Escalonado**: Proporção percentual da magnitude do coeficiente sobre o `RobustScaler` ($|\beta_j| / \sum |\beta| \times 100\%$).
+
+##### 📋 Ranking Consolidado de Feature Importance (Regressão Múltipla):
+
+| Rank | Feature | Queda no $R^2$ Teste (%) | Peso Relativo Coef (%) | Coef. Escalonado (R$) | Papel Estratégico no Mercado Imobiliário |
+| :---: | :--- | :---: | :---: | :---: | :--- |
+| **🥇 1º** | **Banheiros** | **49.66% (±2.10%)** | **19.65%** | **+R$ 165.643,22** | **Maior impacto na generalização**: É o principal divisor de águas entre apartamentos econômicos e unidades de alto padrão (suítes e lavabos). |
+| **🥈 2º** | **Vagas de Garagem** | **30.74% (±1.56%)** | **28.56%** | **+R$ 240.786,62** | **Maior valor unitário financeiro**: Atributo de maior peso financeiro isolado e segundo maior impacto preditivo. |
+| **🥉 3º** | **Zona Sul** | **6.66% (±0.51%)** | **18.54%** | **+R$ 156.312,49** | **Localização nobre**: Principal polarizador geográfico de valor patrimonial sobre o Centro. |
+| **4º** | **Metragem ($\text{m}^2$)** | **2.01% (±0.21%)** | **2.80%** | **+R$ 23.645,46** | Área útil residual marginal após isolar o número de cômodos, vagas e bairro. |
+| **5º** | **Zona Norte** | **0.89% (±0.18%)** | **9.10%** | **+R$ 76.724,93** | Prêmio de valorização regional sobre a Zona Central. |
+| **6º** | **Zona Leste** | **0.77% (±0.15%)** | **7.77%** | **+R$ 65.474,12** | Prêmio regional sobre o Centro. |
+| **7º** | **Quartos** | **0.76% (±0.20%)** | **4.78%** | **-R$ 40.276,44** | Efeito de compartimentação: fixando a área, mais divisões indicam cômodos compactos. |
+| **8º** | **Zona Oeste** | **0.68% (±0.13%)** | **8.81%** | **+R$ 74.258,70** | Prêmio regional sobre o Centro. |
+
+##### 🖼️ Gráfico de Importância de Recursos no MLflow:
+O gráfico gerado pelo método [`gerar_grafico_importancia_features`](src/avaliador/avaliador.py) é registrado de forma nativa no **MLflow** como `graficos/importancia_features.png`:
+- **Painel Esquerdo**: Barras horizontais com a queda média no $R^2$ e desvio padrão de erro ($\pm \sigma$), destacando o protagonismo absoluto de **Banheiros (49.66%)** e **Vagas (30.74%)** — que juntos explicam mais de **80%** da estabilidade preditiva.
+- **Painel Direito**: Pesos relativos percentuais dos coeficientes com codificação semântica por cores (verde para prêmios positivos de valorização e vermelho para o coeficiente negativo de quartos).
+
+##### 💼 Insights Estratégicos para o Salão de Vendas:
+- **O Mito da Metragem Isolada**: Corretores frequentemente focam no "tamanho do apartamento". A análise de importância prova cientificamente que, em Ribeirão Preto, **Banheiros e Garagens têm 40 vezes mais poder de definir o preço final do que metros quadrados adicionais** quando o imóvel já possui tamanho médio.
+- **Negociação de Vagas**: Perder 1 vaga de garagem desvaloriza o imóvel em **R$ 240,8 mil**, o equivalente a perder mais de 90 m² em valor marginal bruto.
+
 ---
 
 ### 3. Comparativo Executivo Consolidado: Regressão Linear Simples vs. Múltipla
@@ -891,6 +1252,7 @@ A comparação direta entre os dois modelos quantifica com clareza o retorno sob
 | **Risco de Encalhe (> +10%)** | 65.44% | **39.37%** | **-26.07 p.p.** de redução de tempo em estoque |
 | **Desvio de Comissão (6%)** | R$ 11.927,05 / imóvel | **R$ 6.680,50 / imóvel** | **Economia de R$ 5.246,55 por transação** |
 | **Assertividade ($\pm 10\%$)** | 10.94% | **27.12%** | **+147.9%** de assertividade comercial |
+| **Distribuição de Importância**| 100% concentrado em Metragem | **Banheiros (49.7%), Vagas (30.7%), Zona Sul (6.7%)** | Modelo multivariado robusto e diversificado |
 
 > 💰 **Impacto Financeiro Anual Consolidado**:
 > Em uma imobiliária que transaciona **100 apartamentos ao ano**, a substituição da Regressão Linear Simples pela Regressão Linear Múltipla gera uma blindagem financeira de **R$ 524.655,00 em assertividade de comissões**, além de desbloquear o catálogo ao reduzir o encalhe de 65% para 39%.
@@ -1066,6 +1428,118 @@ Para expandir a maturidade analítica da imobiliária, o pipeline foi desenhado 
    - Estratificar a assertividade entre apartamentos econômicos (Minha Casa Minha Vida) e imóveis de alto padrão (Zona Sul/Fiusa), evitando que os altos valores monetários de bairros nobres mascarem o erro percentual de bairros populares.
 5. **Custo de Oportunidade da Força de Vendas (Visitas vs. Desvio de Preço)**:
    - Medir a correlação entre o desvio de preço do imóvel anunciado e o número médio de visitas presenciais realizadas antes da proposta, quantificando o tempo desperdiçado pelos corretores com estoques fora do preço.
+
+---
+
+## 🧪 Segregação dos Avaliadores por Modelo de Regressão
+
+Para cumprir rigorosamente os princípios de **Clean Architecture** e **SOLID** (notadamente o **Princípio da Responsabilidade Única - SRP** e o **Princípio Aberto/Fechado - OCP**), o módulo [`src/avaliador/`](src/avaliador/) foi estruturado de forma a segregar a lógica de avaliação estatística, diagnóstica e financeira em classes especializadas por modelo de regressão, orquestradas pelo padrão **Factory Method**:
+
+```mermaid
+classDiagram
+    class AvaliadorBase {
+        <<Abstract>>
+        +nome_modelo: str*
+        +avaliar_metricas_regressao(y_real, y_pred, n_features) dict
+        +avaliar_saude_financeira(y_real, y_pred, taxa_comissao) dict
+        +gerar_relatorio_financeiro(y_real, y_pred, taxa_comissao) str
+        +avaliar_diagnostico_ajuste(y_tr, y_tp, y_te, y_ep) dict
+        +gerar_relatorio_diagnostico_ajuste(diagnostico) str
+        +gerar_relatorio_validacao_cruzada(resultado_cv) str
+        +formatar_equacao_reta(modelo, colunas, scaler)* str
+        +gerar_grafico_diagnostico_ajuste(modelo, x_tr, y_tr, x_te, y_te)* Figure
+        +avaliar_importancia_features(modelo, x_te, y_te, colunas)* dict
+        +gerar_relatorio_importancia_features(resultado)* str
+        +gerar_grafico_importancia_features(resultado, nome, caminho)* Figure
+    }
+
+    class AvaliadorRegressaoLinear {
+        +nome_modelo: str = "Regressão Linear Simples"
+        +formatar_equacao_reta() str
+        +gerar_grafico_diagnostico_ajuste() Figure
+        +avaliar_importancia_features() dict
+        +gerar_grafico_importancia_features() Figure
+    }
+
+    class AvaliadorRegressaoLinearMultipla {
+        +nome_modelo: str = "Regressão Linear Múltipla"
+        +formatar_equacao_reta() str
+        +gerar_grafico_diagnostico_ajuste() Figure
+        +avaliar_importancia_features() dict
+        +gerar_grafico_importancia_features() Figure
+    }
+
+    class Avaliador {
+        <<Fachada Polimórfica e Compatível>>
+        +formatar_equacao_reta() str
+        +gerar_grafico_diagnostico_ajuste() Figure
+        +avaliar_importancia_features() dict
+        +gerar_grafico_importancia_features() Figure
+    }
+
+    class AvaliadorFactory {
+        <<Factory Method>>
+        +criar_avaliador(estrategia_ou_modelo, n_features) AvaliadorBase
+    }
+
+    AvaliadorBase <|-- AvaliadorRegressaoLinear
+    AvaliadorBase <|-- AvaliadorRegressaoLinearMultipla
+    AvaliadorBase <|-- Avaliador
+    AvaliadorFactory ..> AvaliadorBase : instancia
+```
+
+### 1. `AvaliadorBase` ([src/avaliador/avaliador_base.py](src/avaliador/avaliador_base.py))
+Classe base abstrata (`ABC`) que centraliza toda a infraestrutura matemática comum a qualquer regressor:
+- **Métricas Estatísticas Universais**: $R^2$, $R^2$ ajustado, MAE, MedAE, RMSE, MAPE e Max Error.
+- **Auditoria de Saúde Financeira e Comercial**: Resíduos percentuais vetorizados, faixas de desconto P25/P50, riscos de superavaliação (>+10%) e subavaliação (<-10%), desvio monetário de comissão a 6% e taxas de acerto comercial ($\pm 5\%$, $\pm 10\%$, $\pm 15\%$).
+- **Relatórios Formatados**: Geração de saídas textuais padronizadas para terminal e artefatos de auditoria no MLflow.
+- **Validação Cruzada K-Fold**: Consolidação estatística não-enviesada de médias e dispersões entre partições de teste e treino.
+
+### 2. `AvaliadorRegressaoLinear` ([src/avaliador/avaliador_regressao_linear.py](src/avaliador/avaliador_regressao_linear.py))
+Especializado para a modelagem univariada de **Regressão Linear Simples** ($\text{Metragem} \rightarrow \text{Preço}$):
+- **Equação Univariada da Reta**: Formata a relação bidimensional pura $\widehat{\text{Preço}} = \beta_0 + \beta_1 \cdot \text{Metragem}$ em escala original (R$) e no espaço normalizado (`RobustScaler`), sem poluição de termos dummies.
+- **Diagnóstico de Underfitting Severo**: Avaliação adaptada para o cenário univariado, diagnosticando o alto viés estrutural resultante da omissão de atributos essenciais (vagas, banheiros e localização).
+- **Feature Importance Univariada**: Concentração de 100% da variabilidade explicada na única feature de entrada e geração de gráfico univariado de barra horizontal única.
+
+### 3. `AvaliadorRegressaoLinearMultipla` ([src/avaliador/avaliador_regressao_linear_multipla.py](src/avaliador/avaliador_regressao_linear_multipla.py))
+Especializado para a modelagem multivariada de **Regressão Linear Múltipla** (8 variáveis explicativas: Quartos, Banheiros, Vagas, Metragem e Dummies de Zona):
+- **Equação Hiperplanar Multivariada**: Apresenta todos os coeficientes parciais $\beta_j$, explicitando a categoria base de referência (Zona Centro = 0) e os pesos nos espaços original e padronizado.
+- **Diagnóstico Multivariado**: Curva de aprendizado detalhada com a demarcação dos regimes de transição (Ponto A: início do overfitting amostral; Ponto B: fim do overfitting e início do viés linear; Ponto C: platô de leve underfitting linear).
+- **Feature Importance Multivariada**: Permutation Importance estocástica combinada com a análise de pesos relativos dos coeficientes escalonados ($|\beta_j| / \sum |\beta|$) e gráfico duplo com barras horizontais coloridas (verde para impacto positivo, vermelho para negativo).
+
+### 4. `AvaliadorFactory` ([src/avaliador/avaliador_factory.py](src/avaliador/avaliador_factory.py))
+Aplica o padrão **Factory Method** para desacoplar a escolha do avaliador em tempo de execução, permitindo injeção dinâmica no pipeline:
+```python
+from avaliador import AvaliadorFactory
+from estrategia_modelo import EstrategiaRegressaoLinear, EstrategiaRegressaoLinearMultipla
+
+# Resolução automática por tipo de estratégia de modelo:
+avaliador_simples = AvaliadorFactory.criar_avaliador(EstrategiaRegressaoLinear())
+# Retorna: <AvaliadorRegressaoLinear>
+
+avaliador_multiplo = AvaliadorFactory.criar_avaliador(EstrategiaRegressaoLinearMultipla())
+# Retorna: <AvaliadorRegressaoLinearMultipla>
+
+# Resolução automática por quantidade de features:
+avaliador_1 = AvaliadorFactory.criar_avaliador(n_features=1)  # AvaliadorRegressaoLinear
+avaliador_8 = AvaliadorFactory.criar_avaliador(n_features=8)  # AvaliadorRegressaoLinearMultipla
+```
+
+### 5. `Avaliador` ([src/avaliador/avaliador.py](src/avaliador/avaliador.py))
+Atua como fachada polimórfica e despachante adaptativo, garantindo **100% de retrocompatibilidade** com códigos legados e testes que instanciam `Avaliador()`. O despachante detecta se o cenário é univariado ou multivariado e delega as chamadas diretamente para a implementação especializada correspondente.
+
+---
+
+### Comparativo das Responsabilidades e Especializações
+
+| Recurso / Método | `AvaliadorRegressaoLinear` (Simples) | `AvaliadorRegressaoLinearMultipla` (Múltipla) |
+| :--- | :--- | :--- |
+| **Dimensionalidade de Entrada** | $p = 1$ feature (Metragem) | $p \ge 2$ features (Quartos, Banheiros, Vagas, Metragem, Zonas) |
+| **Formatação da Equação** | Reta univariada: $\widehat{y} = \beta_0 + \beta_1 \cdot \text{Metragem}$ | Hiperplano: $\widehat{y} = \beta_0 + \sum \beta_j X_j$ com categoria base Zona Centro |
+| **Diagnóstico de Ajuste** | Foco no **Underfitting Severo** ($R^2$ treino $\approx 25.8\%$, teste $\approx 43.0\%$) | Foco no **Leve Underfitting Linear** ($R^2$ treino $\approx 73.6\%$, teste $\approx 81.7\%$) |
+| **Curva de Aprendizado** | Platô univariado com teto baixo de aprendizado | Demarcação explícita dos regimes de transição: Pontos A, B e C |
+| **Feature Importance** | 100% alocado na Metragem (gráfico univariado compacto) | Permutation Importance + Pesos Relativos dos Coeficientes Escalonados (gráfico duplo) |
+| **Injeção no Pipeline** | Automático via `AvaliadorFactory` ao selecionar `EstrategiaRegressaoLinear` | Automático via `AvaliadorFactory` ao selecionar `EstrategiaRegressaoLinearMultipla` |
 
 ---
 

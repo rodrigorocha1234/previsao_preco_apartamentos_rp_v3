@@ -168,6 +168,15 @@ class ObservadorMLflow(IObservadorPipeline):
                     if isinstance(v, (int, float)):
                         metricas[k] = float(v)
 
+            # Métricas de Feature Importance
+            if "resultado_importancia" in dados and isinstance(dados["resultado_importancia"], dict):
+                ranking_items = dados["resultado_importancia"].get("ranking_features", [])
+                if isinstance(ranking_items, list):
+                    for item in ranking_items:
+                        feat_clean = item["feature"].replace(" ", "_").replace("/", "_")
+                        metricas[f"feat_imp_r2_drop_{feat_clean}"] = float(item["queda_r2_pct"])
+                        metricas[f"feat_imp_peso_rel_{feat_clean}"] = float(item["peso_relativo_pct"])
+
             if metricas:
                 mlflow.log_metrics(metricas)
 
@@ -196,6 +205,20 @@ class ObservadorMLflow(IObservadorPipeline):
                         except Exception:
                             pass
 
+                # Log do Gráfico de Importância de Features
+                figura_imp = dados.get("figura_importancia")
+                if figura_imp is not None:
+                    try:
+                        mlflow.log_figure(figura_imp, "graficos/importancia_features.png")
+                    except Exception as efi:
+                        logger.warning(f"Falha ao salvar figura de importância de features no MLflow: {efi}")
+                    finally:
+                        try:
+                            import matplotlib.pyplot as plt
+                            plt.close(figura_imp)
+                        except Exception:
+                            pass
+
                 caminho_figura = dados.get("caminho_figura_diagnostico")
                 if caminho_figura and os.path.exists(str(caminho_figura)) and figura is None:
                     try:
@@ -206,6 +229,10 @@ class ObservadorMLflow(IObservadorPipeline):
                 diagnostico_txt = dados.get("diagnostico_ajuste_texto")
                 if isinstance(diagnostico_txt, str) and diagnostico_txt.strip():
                     mlflow.log_text(diagnostico_txt, "diagnostico_underfitting_overfitting.txt")
+
+                relatorio_imp = dados.get("relatorio_importancia")
+                if isinstance(relatorio_imp, str) and relatorio_imp.strip():
+                    mlflow.log_text(relatorio_imp, "importancia_features.txt")
 
                 tabela_grid = dados.get("tabela_grid")
                 if isinstance(tabela_grid, str) and tabela_grid.strip():

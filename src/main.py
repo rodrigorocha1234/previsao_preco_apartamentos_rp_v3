@@ -3,7 +3,12 @@ from typing import Any
 
 import pandas as pd
 
-from avaliador.avaliador import Avaliador
+from avaliador import (
+    AvaliadorBase,
+    AvaliadorFactory,
+    AvaliadorRegressaoLinear,
+    AvaliadorRegressaoLinearMultipla,
+)
 from carregador.carregador_csv import CarregadorXLSX
 from carregador.icarregador import ICarregador
 from estrategia_modelo.estrategia_modelo import EstrategiaModelo
@@ -23,7 +28,7 @@ class PipelineML(ISujeitoPipeline):
         carregador_dados: ICarregador[pd.DataFrame],
         preprocessador: IPreprocessador | None = None,
         estrategia_modelo: EstrategiaModelo | None = None,
-        avaliador: Avaliador | None = None,
+        avaliador: AvaliadorBase | None = None,
         observadores: list[IObservadorPipeline] | None = None,
         flag_processamento: bool = True,
     ) -> None:
@@ -33,7 +38,11 @@ class PipelineML(ISujeitoPipeline):
         self.__estrategia_modelo = (
             estrategia_modelo if estrategia_modelo is not None else EstrategiaRegressaoLinear()
         )
-        self.__avaliador = avaliador if avaliador is not None else Avaliador()
+        self.__avaliador: AvaliadorBase = (
+            avaliador
+            if avaliador is not None
+            else AvaliadorFactory.criar_avaliador(self.__estrategia_modelo)
+        )
         self.__observadores: list[IObservadorPipeline] = (
             list(observadores) if observadores is not None else []
         )
@@ -149,6 +158,25 @@ class PipelineML(ISujeitoPipeline):
                     taxa_comissao=0.06,
                 )
                 print(relatorio)
+                print()
+
+                # 7. Análise de Importância de Recursos (Feature Importance)
+                resultado_importancia = self.__avaliador.avaliar_importancia_features(
+                    modelo=modelo_treinado,
+                    x_teste=dados.x_teste,
+                    y_teste=dados.y_teste,
+                    colunas_features=colunas,
+                )
+                relatorio_importancia = self.__avaliador.gerar_relatorio_importancia_features(resultado_importancia)
+                print(relatorio_importancia)
+                print()
+
+                figura_importancia = self.__avaliador.gerar_grafico_importancia_features(
+                    resultado_importancia=resultado_importancia,
+                    nome_modelo=self.__estrategia_modelo.__class__.__name__,
+                    caminho_salvar=None,
+                )
+                print("Gráfico de importância de features gerado em memória (será enviado direto ao MLflow sem salvar localmente).\n")
 
                 # Notificar fim da avaliação com métricas, relatórios e gráfico para o MLflow
                 self.notificar("fim_avaliacao", {
@@ -160,6 +188,9 @@ class PipelineML(ISujeitoPipeline):
                     "diagnostico_ajuste_texto": relatorio_diag,
                     "diagnostico_status": diag_ajuste["status"],
                     "figura_diagnostico": figura_diagnostico,
+                    "resultado_importancia": resultado_importancia,
+                    "relatorio_importancia": relatorio_importancia,
+                    "figura_importancia": figura_importancia,
                 })
 
                 return dados, modelo_treinado, y_predicoes
@@ -548,11 +579,15 @@ if __name__ == '__main__':
     # 3. Configurando a Estratégia de Modelo (Regressão Linear Múltipla com múltiplas features):
     estrategia_linear_multipla = EstrategiaRegressaoLinearMultipla()
 
-    # 4. Injetando no Pipeline de ML:
+    # 4. Configurando o Avaliador Especializado para Regressão Linear Múltipla:
+    avaliador_modelo = AvaliadorRegressaoLinearMultipla()
+
+    # 5. Injetando no Pipeline de ML:
     pml = PipelineML(
         carregador_dados=carregador,
         preprocessador=preprocessador_modelo,
         estrategia_modelo=estrategia_linear_multipla,
+        avaliador=avaliador_modelo,
         observadores=[observador_mlflow],
         flag_processamento=True,
     )
