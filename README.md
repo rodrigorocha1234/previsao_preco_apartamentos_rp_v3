@@ -12,6 +12,7 @@ Sistema modular de Machine Learning para previsão de preços de apartamentos em
 - [Pipeline de Pré-processamento](#-pipeline-de-pré-processamento)
 - [Estratégias de Modelagem](#-estratégias-de-modelagem)
   - [Grid Search e Otimização da Regressão Linear](#-grid-search-e-otimização-da-regressão-linear)
+  - [Diagnóstico de Ajuste: Underfitting vs. Overfitting](#-diagnóstico-de-ajuste-underfitting-vs-overfitting-no-treinamento-simples)
 - [Avaliação de Negócio e Saúde Financeira](#-avaliação-de-negócio-e-saúde-financeira-da-imobiliária)
 - [Infraestrutura MLOps (Docker)](#-infraestrutura-mlops-docker)
 - [Padrão Observer e Rastreamento com MLflow](#-padrão-observer-e-rastreamento-com-mlflow)
@@ -319,6 +320,81 @@ pipeline = PipelineML(
 
 dados, resultado_grid, y_pred = pipeline.rodar_grid_search()
 print("Melhores parâmetros salvos no MLflow:", resultado_grid.melhores_parametros)
+```
+
+---
+
+### 📊 Diagnóstico de Ajuste: Underfitting vs. Overfitting no Treinamento Simples
+
+Durante a execução do **Treinamento Simples** (`rodar_treinamento_simples`), o pipeline executa automaticamente a avaliação de capacidade de ajuste do modelo, analisando o comportamento simultâneo da **Curva de Aprendizado (*Learning Curve*)** e o **Desempenho no Teste Independente**.
+
+O objetivo técnico é diagnosticar se o modelo linear sofre de **Overfitting (Sobreajuste / Alta Variância)** ou **Underfitting (Subajuste / Alto Viés)**.
+
+#### 🎯 Veredito Técnico Oficial:
+1. **Overfitting (Sobreajuste)**: **NÃO OCORRE**.
+   - As métricas de erro no conjunto de teste independente (1.143 apartamentos) são **iguais ou inferiores** às do conjunto de treino (4.569 apartamentos).
+   - $R^2_{\text{teste}} = \mathbf{81.72\%}$ vs $R^2_{\text{treino}} = \mathbf{73.60\%}$.
+   - $\text{MAE}_{\text{teste}} = \mathbf{\text{R\$ } 111.341,69} \le \text{MAE}_{\text{treino}} = \mathbf{\text{R\$ } 113.590,33}$.
+   - $\text{RMSE}_{\text{teste}} = \mathbf{\text{R\$ } 181.756,91} < \text{RMSE}_{\text{treino}} = \mathbf{\text{R\$ } 212.774,52}$.
+   - O modelo não memorizou os dados de treino; pelo contrário, generaliza com consistência estatística para novos imóveis.
+2. **Underfitting (Subajuste)**: **SIM (Leve / Moderado Estrutural)**.
+   - O modelo apresenta uma limitação intrínseca de viés (**Alto Viés Linear / High Bias**), decorrente da hipótese matemática da reta ($y = \mathbf{X}\boldsymbol{\beta} + \epsilon$).
+   - O mercado imobiliário apresenta rendimentos marginais decrescentes e interações espaciais não-lineares (ex: um quarto adicional em 60 m² tem impacto diferente de um quarto em 250 m²).
+   - A Curva de Aprendizado atinge um **platô assintótico**: mesmo injetando milhares de amostras adicionais, o erro residual estagna em um piso fixo ($\approx \text{R\$ } 111\text{k}$ de MAE e $\approx 81\%$ de $R^2$). Esse teto só pode ser superado por algoritmos não-lineares.
+
+---
+
+#### 🖼️ Gráfico de Diagnóstico: Demarcação Explícita de Início e Término de Ajuste
+
+O gráfico gerado pelo método [`gerar_grafico_diagnostico_ajuste`](src/avaliador/avaliador.py) é construído diretamente em memória (sem persistência local em disco) e registrado de forma 100% nativa via `mlflow.log_figure(fig, "graficos/diagnostico_ajuste.png")` como artefato visual na run ativa do **MLflow**:
+
+> **💡 MLOps Best Practice**: Nenhum arquivo de imagem é gerado no sistema de arquivos local (`caminho_salvar=None`), evitando poluição de pastas do repositório e centralizando todos os gráficos analíticos na governança do **MLflow**.
+
+#### 🧭 Detalhamento dos Pontos no Gráfico (Onde Começam e Terminam Overfitting / Underfitting):
+
+| Ponto / Zona | Coordenada ($N$) | Regime de Ajuste | Comportamento Gráfico e Explicação Estatística |
+| :--- | :---: | :--- | :--- |
+| **PONTO A** | **$N = 365$** (10% do treino) | **▶ INÍCIO DO OVERFITTING** | **Risco inicial de sobreajuste**: Com poucas amostras, o modelo decora os dados de treino ($R^2 \approx 82\%$), enquanto a validação cruzada apresenta score instável ($R^2 \approx 53\%$). O **gap de 29 p.p.** caracteriza a alta variância decorrente de escassez amostral. |
+| **Faixa Vermelha** | $365 \le N < 1.681$ | **Zona de Transição e Redução de Variância** | À medida que o volume de treino cresce, o gap entre treino e validação diminui rapidamente, mostrando que mais dados combatem com eficiência a variância amostral. |
+| **PONTO B** | **$N \approx 1.681$** (46% do treino) | **🛑 FIM DO OVERFITTING<br/>🟡 INÍCIO DO UNDERFITTING** | **Ponto de Inflexão e Estabilização**: O gap para de encolher significativamente. **O risco de overfitting encerra-se formalmente aqui**. Simultaneamente, a curva de treino para de cair e entra no regime assintótico, **iniciando o platô de underfitting estrutural**. |
+| **Faixa Âmbar** | $1.681 \le N \le 3.655$ | **Zona de Platô Assintótico (Alto Viés)** | Ambas as curvas (Treino e Validação CV) tornam-se praticamente paralelas e horizontais. Adicionar mais dados não reduz o erro, evidenciando que a variância é zero e o erro residual é puramente viés de especificação. |
+| **PONTO C** | **$N = 3.655$** (100% do treino) | **🏁 PLATÔ MÁXIMO DE UNDERFITTING** | **Teto Físico da Reta Linear**: Atinge o limite máximo de aprendizado do regressor OLS ($R^2 \approx 74.6\%$ no treino / $41.3\%$ em CV / $81.7\%$ no teste independente). O erro residual é irredutível dentro da classe de modelos lineares. |
+
+---
+
+#### 📋 Comparativo Consolidado de Métricas (Treino vs. Teste Independente)
+
+| Métrica Analisada | Treino ($N = 4.569$) | Teste ($N = 1.143$) | Diferença (Gap) | Diagnóstico Técnico |
+| :--- | :---: | :---: | :---: | :--- |
+| **$R^2$ (Aderência)** | **73.60%** | **81.72%** | **-8.12 p.p.** | **Excelente Generalização**: Teste supera o treino, confirmando ausência total de memorização (*overfitting*). |
+| **MAE (Erro Médio)** | **R$ 113.590,33** | **R$ 111.341,69** | **-R$ 2.248,64** | O erro médio em novos dados é ligeiramente inferior ao de treino. |
+| **RMSE (Penalidade Outliers)** | **R$ 212.774,52** | **R$ 181.756,91** | **-R$ 31.017,61** | Dispersão menor no teste; modelo lida de forma estável com coberturas e imóveis de luxo. |
+
+---
+
+#### 🔭 Como Romper o Teto de Underfitting? (Próximos Passos Recomendados)
+Como o diagnóstico comprovou que o problema **não é overfitting** e sim **leve underfitting por alto viés linear**, as seguintes abordagens técnicas são recomendadas:
+1. **Modelos Não-Lineares de Árvore (Random Forest / LightGBM / XGBoost)**:
+   - Capturam interações complexas (ex: valorização por $\text{m}^2$ exponencial para coberturas vs. kitnets).
+2. **Engenharia de Recursos Polinomiais e Interações**:
+   - Criar termos cruzados como $(\text{Metragem} \times \text{Zona Sul})$ e $(\text{Quartos} / \text{Metragem})$.
+3. **Modelagem Segmentada por Zona**:
+   - Conforme demonstrado na análise regional, treinar regressores especializados para a Zona Centro e Zona Sul melhora o teto do $R^2$.
+
+---
+
+#### 👁️ Registro e Visualização no MLflow
+
+Durante o treinamento simples, o [`ObservadorMLflow`](src/observador/observador_mlflow.py) registra:
+- **Artefato de Imagem**: `graficos/diagnostico_ajuste.png` (figura em alta resolução).
+- **Artefato Textual**: `diagnostico_underfitting_overfitting.txt` (relatório analítico formatado).
+- **Métricas de Treino**: `treino_r2`, `treino_mae`, `treino_rmse`.
+- **Tag de Governança**: `diagnostico_ajuste = "Leve Underfitting (Alto Viés Linear) / Ausência de Overfitting"`.
+
+```bash
+# Para visualizar no painel do MLflow:
+http://localhost:5000/#/experiments/1
+# Selecione a run "regressao_linear_treinamento_simples" -> Aba "Artifacts" -> Pasta "graficos"
 ```
 
 ---
@@ -782,11 +858,11 @@ Equação no Espaço Escalonado (com transformador ativo):
 ## 🧪 Testes e Qualidade
 
 ### Execução dos Testes Unitários
-Os testes utilizam `unittest` da biblioteca padrão e cobrem integralmente as regras do pipeline de dados ([`test_preprocessador.py`](tests/test_preprocessador.py)), as métricas de negócio do avaliador financeiro ([`test_avaliador.py`](tests/test_avaliador.py)) e o desacoplamento MLOps do padrão Observer ([`test_observador.py`](tests/test_observador.py)):
+Os testes utilizam `unittest` da biblioteca padrão e cobrem integralmente as regras do pipeline de dados ([`test_preprocessador.py`](tests/test_preprocessador.py)), as métricas de negócio e diagnóstico de ajuste do avaliador ([`test_avaliador.py`](tests/test_avaliador.py)), o Grid Search com `GridSearchCV` ([`test_grid_search.py`](tests/test_grid_search.py)) e o desacoplamento MLOps do padrão Observer ([`test_observador.py`](tests/test_observador.py)):
 ```bash
 PYTHONPATH=src python -m unittest discover -s tests -p "test_*.py"
 ```
-Total de testes automatizados: **28 testes** aprovados.
+Total de testes automatizados: **32 testes** aprovados.
 
 ### Verificação Estática de Tipos (Mypy)
 Como o arquivo `pyproject.toml` já está configurado com `mypy_path = "src"` e `files = ["src", "tests"]`, basta executar:

@@ -171,6 +171,12 @@ class ObservadorMLflow(IObservadorPipeline):
                         mlflow.log_figure(figura, "graficos/diagnostico_ajuste.png")
                     except Exception as ef:
                         logger.warning(f"Falha ao salvar figura no MLflow: {ef}")
+                    finally:
+                        try:
+                            import matplotlib.pyplot as plt
+                            plt.close(figura)
+                        except Exception:
+                            pass
 
                 caminho_figura = dados.get("caminho_figura_diagnostico")
                 if caminho_figura and os.path.exists(str(caminho_figura)) and figura is None:

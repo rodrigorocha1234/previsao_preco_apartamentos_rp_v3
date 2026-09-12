@@ -120,17 +120,16 @@ class PipelineML(ISujeitoPipeline):
                 print(relatorio_diag)
                 print()
 
-                # 5. Geração do Gráfico Diagnóstico com Zonas Delimitadas de Overfitting/Underfitting
-                caminho_grafico = os.path.join(os.getcwd(), "docs", "diagnostico_ajuste.png")
+                # 5. Geração do Gráfico Diagnóstico em memória (salvo direto no MLflow)
                 figura_diagnostico = self.__avaliador.gerar_grafico_diagnostico_ajuste(
                     modelo=modelo_treinado,
                     x_treino=dados.x_treino,
                     y_treino=dados.y_treino,
                     x_teste=dados.x_teste,
                     y_teste=dados.y_teste,
-                    caminho_salvar=caminho_grafico,
+                    caminho_salvar=None,
                 )
-                print(f"Gráfico de diagnóstico de ajuste gerado e salvo em: {caminho_grafico}\n")
+                print("Gráfico de diagnóstico de ajuste gerado em memória (será enviado direto ao MLflow sem salvar localmente).\n")
 
                 # 6. Avaliação da Saúde Financeira e Comercial da Imobiliária
                 metricas_reg = self.__avaliador.avaliar_metricas_regressao(
@@ -160,7 +159,6 @@ class PipelineML(ISujeitoPipeline):
                     "diagnostico_ajuste_texto": relatorio_diag,
                     "diagnostico_status": diag_ajuste["status"],
                     "figura_diagnostico": figura_diagnostico,
-                    "caminho_figura_diagnostico": caminho_grafico,
                 })
 
                 return dados, modelo_treinado, y_predicoes

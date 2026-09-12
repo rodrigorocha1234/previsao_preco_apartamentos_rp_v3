@@ -312,7 +312,10 @@ class Avaliador:
         y_teste: np.ndarray,
         caminho_salvar: str | None = None,
     ) -> Any:
-        """Gera e opcionalmente salva a figura com a Curva de Aprendizado e a demarcação de zonas de Overfitting e Underfitting."""
+        """Gera e opcionalmente salva a figura com a Curva de Aprendizado e a demarcação explícita dos pontos
+
+        onde começam e terminam Overfitting e Underfitting.
+        """
         import matplotlib
         matplotlib.use("Agg")
         import matplotlib.pyplot as plt
@@ -339,7 +342,7 @@ class Avaliador:
         val_mean = np.mean(val_scores, axis=1) * 100
         val_std = np.std(val_scores, axis=1) * 100
 
-        # Métricas pontuais
+        # Métricas pontuais de teste independente
         y_pred_tr = modelo.predict(x_treino)
         y_pred_te = modelo.predict(x_teste)
         r2_tr = float(r2_score(y_treino, y_pred_tr)) * 100
@@ -349,49 +352,70 @@ class Avaliador:
         rmse_tr = float(root_mean_squared_error(y_treino, y_pred_tr)) / 1000.0
         rmse_te = float(root_mean_squared_error(y_teste, y_pred_te)) / 1000.0
 
-        fig, axes = plt.subplots(1, 2, figsize=(16, 7), dpi=150)
-        plt.subplots_adjust(wspace=0.28)
+        fig, axes = plt.subplots(1, 2, figsize=(18, 8.2), dpi=150)
+        plt.subplots_adjust(wspace=0.25, bottom=0.22, top=0.86)
 
-        # SUBPLOT 1: Learning Curve com Zonas Delimitadas
+        # SUBPLOT 1: Learning Curve com Zonas e Pontos Delimitados
         ax1 = axes[0]
-        # Ponto de corte na transição da estabilização
-        ponto_corte = train_sizes[min(2, len(train_sizes) - 1)]
+        ponto_inicio_over = int(train_sizes[0])
+        ponto_corte = int(train_sizes[min(2, len(train_sizes) - 1)])
+        ponto_fim_under = int(train_sizes[-1])
 
-        ax1.axvspan(train_sizes[0], ponto_corte, color="#ff7675", alpha=0.18, label="Zona 1: Início com Risco de Overfitting (Gap Alto)")
-        ax1.axvspan(ponto_corte, train_sizes[-1], color="#fdcb6e", alpha=0.20, label="Zona 2: Convergência / Leve Underfitting (Alto Viés)")
+        # Sombreamento das Zonas
+        ax1.axvspan(ponto_inicio_over, ponto_corte, color="#ff7675", alpha=0.18, label="Regime 1: Risco de Overfitting (Poucas Amostras)")
+        ax1.axvspan(ponto_corte, ponto_fim_under, color="#fdcb6e", alpha=0.22, label="Regime 2: Platô de Underfitting (Alto Viés Linear)")
 
-        ax1.axvline(ponto_corte, color="#d63031", linestyle=":", lw=2)
-        ax1.text(ponto_corte + 30, 10, "Fim do Overfitting →\nInício do Platô de Underfitting",
-                 color="#b71540", fontsize=9, fontweight="bold",
-                 bbox=dict(boxstyle="round,pad=0.4", fc="#ffeaa7", ec="#d63031", alpha=0.95))
+        # Faixas no topo indicando os Regimes
+        ax1.fill_between([ponto_inicio_over, ponto_corte], 102, 110, color="#d63031", alpha=0.90)
+        ax1.text((ponto_inicio_over + ponto_corte) / 2, 106, "ZONA DE RISCO DE OVERFITTING", color="white",
+                 ha="center", va="center", fontsize=9, fontweight="bold")
 
-        ax1.plot(train_sizes, train_mean, "o-", color="#0984e3", label=f"Treino (Final: {train_mean[-1]:.1f}%)", lw=2.5, markersize=6)
+        ax1.fill_between([ponto_corte, ponto_fim_under], 102, 110, color="#e67e22", alpha=0.90)
+        ax1.text((ponto_corte + ponto_fim_under) / 2, 106, "ZONA DE UNDERFITTING (ALTO VIÉS)", color="white",
+                 ha="center", va="center", fontsize=9, fontweight="bold")
+
+        # Curvas de Treino e Validação
+        ax1.plot(train_sizes, train_mean, "o-", color="#0984e3", label=f"Treino (Final: {train_mean[-1]:.1f}%)", lw=2.5, markersize=7)
         ax1.fill_between(train_sizes, train_mean - train_std, train_mean + train_std, alpha=0.15, color="#0984e3")
 
-        ax1.plot(train_sizes, val_mean, "s--", color="#00b894", label=f"Validação CV (Final: {val_mean[-1]:.1f}%)", lw=2.5, markersize=6)
+        ax1.plot(train_sizes, val_mean, "s--", color="#00b894", label=f"Validação CV (Final: {val_mean[-1]:.1f}%)", lw=2.5, markersize=7)
         ax1.fill_between(train_sizes, val_mean - val_std, val_mean + val_std, alpha=0.15, color="#00b894")
 
-        # Anotações explicativas
-        ax1.annotate("Gap Treino-Validação Inicial\n(Início do Overfitting com poucas amostras)",
-                     xy=(train_sizes[1], (train_mean[1] + val_mean[1]) / 2),
-                     xytext=(train_sizes[1] + 150, 60),
-                     arrowprops=dict(facecolor="#d63031", shrink=0.05, width=1.5, headwidth=7),
-                     fontsize=8.5, fontweight="bold", color="#d63031",
-                     bbox=dict(boxstyle="round,pad=0.3", fc="#fff", ec="#d63031"))
+        # Linhas verticais e Marcações Explícitas de Início e Fim
+        # 1. PONTO A: Início do Overfitting
+        ax1.axvline(ponto_inicio_over, color="#c0392b", linestyle="--", lw=2.0, alpha=0.85)
+        ax1.annotate(f"PONTO A (N={ponto_inicio_over})\n[+] INÍCIO DO OVERFITTING\n• Gap Treino-Validação Alto (~{train_mean[0]-val_mean[0]:.0f}%)\n• Amostra insuficiente para generalização",
+                     xy=(ponto_inicio_over, train_mean[0]),
+                     xytext=(ponto_inicio_over + 80, 84),
+                     arrowprops=dict(facecolor="#c0392b", edgecolor="#c0392b", shrink=0.08, width=1.5, headwidth=6),
+                     fontsize=8.5, fontweight="bold", color="#962d22",
+                     bbox=dict(boxstyle="round,pad=0.4", fc="#ffeae8", ec="#e74c3c", lw=1.2))
 
-        ax1.annotate("Estabilização Assintótica (~74% Treino)\n(Platô de Underfitting Estrutural Linear)",
-                     xy=(train_sizes[-1], train_mean[-1]),
-                     xytext=(train_sizes[-1] - (train_sizes[-1] - train_sizes[0]) * 0.45, 88),
-                     arrowprops=dict(facecolor="#e17055", shrink=0.05, width=1.5, headwidth=7),
-                     fontsize=8.5, fontweight="bold", color="#d35400",
-                     bbox=dict(boxstyle="round,pad=0.3", fc="#fff", ec="#e17055"))
+        # 2. PONTO B: Fim do Overfitting & Início do Underfitting
+        ax1.axvline(ponto_corte, color="#d35400", linestyle="-.", lw=2.2)
+        ax1.annotate(f"PONTO B (N≈{ponto_corte})\n[x] FIM DO OVERFITTING\n[!] INÍCIO DO UNDERFITTING\n• Gap estabilizado (fim da variância)\n• Início do platô de alto viés",
+                     xy=(ponto_corte, val_mean[min(2, len(train_sizes) - 1)]),
+                     xytext=(ponto_corte + 60, 15),
+                     arrowprops=dict(facecolor="#d35400", edgecolor="#d35400", shrink=0.08, width=1.5, headwidth=6),
+                     fontsize=8.5, fontweight="bold", color="#7e3800",
+                     bbox=dict(boxstyle="round,pad=0.4", fc="#fff9e6", ec="#d35400", lw=1.2))
 
-        ax1.set_title("Curva de Aprendizado: Demarcação de Overfitting vs Underfitting", fontsize=12, fontweight="bold", pad=12)
-        ax1.set_xlabel("Tamanho da Amostra de Treino (N)", fontsize=11)
-        ax1.set_ylabel("Score R² (%)", fontsize=11)
-        ax1.set_ylim(-15, 105)
+        # 3. PONTO C: Término / Platô Final do Underfitting
+        ax1.axvline(ponto_fim_under, color="#b71540", linestyle=":", lw=2.2)
+        ax1.annotate(f"PONTO C (N={ponto_fim_under})\n[*] PLATÔ MÁXIMO DE UNDERFITTING\n• Teto físico da reta linear (~{train_mean[-1]:.0f}%)\n• Mais dados não alteram o viés da reta",
+                     xy=(ponto_fim_under, train_mean[-1]),
+                     xytext=(ponto_fim_under - 1250, 68),
+                     arrowprops=dict(facecolor="#b71540", edgecolor="#b71540", shrink=0.08, width=1.5, headwidth=6),
+                     fontsize=8.5, fontweight="bold", color="#6d0c26",
+                     bbox=dict(boxstyle="round,pad=0.4", fc="#fdf2f4", ec="#b71540", lw=1.2))
+
+        ax1.set_title("Curva de Aprendizado: Pontos de Início e Término de Overfitting / Underfitting", fontsize=12, fontweight="bold", pad=14)
+        ax1.set_xlabel("Tamanho da Amostra de Treino (N)", fontsize=11, fontweight="bold")
+        ax1.set_ylabel("Score R² (%)", fontsize=11, fontweight="bold")
+        ax1.set_ylim(-10, 112)
+        ax1.set_xlim(train_sizes[0] - 80, train_sizes[-1] + 120)
         ax1.grid(True, linestyle="--", alpha=0.6)
-        ax1.legend(loc="lower right", fontsize=9, framealpha=0.95)
+        ax1.legend(loc="lower right", fontsize=8.5, framealpha=0.95)
 
         # SUBPLOT 2: Comparativo Treino vs Teste
         ax2 = axes[1]
@@ -405,9 +429,11 @@ class Avaliador:
         rects1 = ax2.bar(x - width/2, treino_vals, width, label=f"Treino ({len(x_treino)} amostras)", color="#74b9ff", edgecolor="#0984e3", lw=1.2)
         rects2 = ax2.bar(x + width/2, teste_vals, width, label=f"Teste ({len(x_teste)} amostras)", color="#55efc4", edgecolor="#00b894", lw=1.2)
 
-        ax2.set_title("Diagnóstico no Teste Independente: Ausência de Overfitting", fontsize=12, fontweight="bold", pad=12)
+        ax2.set_title("Diagnóstico de Generalização no Teste Independente (Amostra Completa)", fontsize=12, fontweight="bold", pad=14)
         ax2.set_xticks(x)
         ax2.set_xticklabels(metricas_nomes, fontsize=11, fontweight="bold")
+        ax2.set_ylabel("Valor da Métrica", fontsize=11, fontweight="bold")
+        ax2.set_ylim(0, max(max(treino_vals), max(teste_vals)) * 1.15)
         ax2.grid(axis="y", linestyle="--", alpha=0.6)
         ax2.legend(loc="upper right", fontsize=9.5, framealpha=0.95)
 
@@ -421,21 +447,21 @@ class Avaliador:
                          textcoords="offset points", ha="center", va="bottom", fontsize=10, fontweight="bold", color="#2d3436")
 
         texto_diagnostico = (
-            "VEREDITO TÉCNICO:\n"
-            f"• OVERFITTING: NÃO OCORRE (Erro Teste ≤ Treino; R² Teste {r2_te:.1f}% ≥ Treino {r2_tr:.1f}%)\n"
-            f"• UNDERFITTING: LEVE / MODERADO (Alto viés linear: teto de R² ~81% e MAE ~R$ {mae_te:.1f}k)\n"
-            "  Solução para underfitting: Modelos não-lineares (Random Forest / GBDT / Redes Neurais)"
+            "RESUMO TÉCNICO DOS PONTOS DE TRANSIÇÃO E VEREDITO:\n"
+            f"1. OVERFITTING: Começa em N={ponto_inicio_over} (alto gap com poucas amostras) e TERMINA em N≈{ponto_corte}. Na amostra completa NÃO HÁ OVERFITTING (Erro Teste ≤ Treino).\n"
+            f"2. UNDERFITTING: COMEÇA em N≈{ponto_corte} (início do platô de viés) e ATINGE O TETO em N={ponto_fim_under}. É um subajuste leve estrutural (teto R² ~81% e MAE ~R$ {mae_te:.1f}k).\n"
+            "   Recomendação técnica: Para romper o teto de underfitting da reta linear, utilizar modelos não-lineares baseados em árvores (ex: Random Forest, Gradient Boosting)."
         )
-        ax2.text(0.5, -0.22, texto_diagnostico, transform=ax2.transAxes, ha="center", va="top",
-                 fontsize=9.5, family="monospace", color="#2d3436",
-                 bbox=dict(boxstyle="round,pad=0.6", fc="#f8f9fa", ec="#b2bec3", lw=1.5))
 
-        plt.suptitle("Diagnóstico de Capacidade Preditiva da Regressão Linear: Underfitting vs Overfitting",
-                     fontsize=14, fontweight="bold", y=0.98)
+        fig.text(0.5, 0.02, texto_diagnostico, ha="center", va="bottom",
+                 fontsize=9.5, family="monospace", color="#2d3436",
+                 bbox=dict(boxstyle="round,pad=0.7", fc="#f8f9fa", ec="#b2bec3", lw=1.5))
+
+        plt.suptitle("Diagnóstico de Capacidade Preditiva da Regressão Linear: Demarcação Explícita de Overfitting vs Underfitting",
+                     fontsize=14, fontweight="bold", y=0.96)
 
         if caminho_salvar:
             os.makedirs(os.path.dirname(os.path.abspath(caminho_salvar)), exist_ok=True)
             plt.savefig(caminho_salvar, bbox_inches="tight")
 
         return fig
-
