@@ -8,6 +8,7 @@ from carregador.carregador_csv import CarregadorXLSX
 from carregador.icarregador import ICarregador
 from estrategia_modelo.estrategia_modelo import EstrategiaModelo
 from estrategia_modelo.estrategia_regressao_linear import EstrategiaRegressaoLinear
+from estrategia_modelo.estrategia_regressao_linear_multipla import EstrategiaRegressaoLinearMultipla
 from observador.iobservador import IObservadorPipeline, ISujeitoPipeline
 from observador.observador_mlflow import ObservadorMLflow
 from processador.ipreprocessador import IPreprocessador
@@ -540,22 +541,24 @@ if __name__ == '__main__':
     observador_mlflow = ObservadorMLflow(
         tracking_uri=os.getenv("MLFLOW_TRACKING_URI", "http://localhost:5000"),
         experiment_name="previsao_preco_apartamentos_rp",
-        run_name="regressao_linear_validacao_cruzada",
-        tags={"algoritmo": "RegressaoLinear", "fase": "validacao_cruzada", "cv": "KFold", "ambiente": "desenvolvimento"},
+        run_name="regressao_linear_multipla_validacao_cruzada",
+        tags={"algoritmo": "RegressaoLinearMultipla", "fase": "validacao_cruzada", "cv": "KFold", "ambiente": "desenvolvimento"},
     )
 
-    # 3. Configurando a Estratégia de Modelo:
-    estrategia_linear = EstrategiaRegressaoLinear()
+    # 3. Configurando a Estratégia de Modelo (Regressão Linear Múltipla com múltiplas features):
+    estrategia_linear_multipla = EstrategiaRegressaoLinearMultipla()
 
     # 4. Injetando no Pipeline de ML:
     pml = PipelineML(
         carregador_dados=carregador,
         preprocessador=preprocessador_modelo,
-        estrategia_modelo=estrategia_linear,
+        estrategia_modelo=estrategia_linear_multipla,
         observadores=[observador_mlflow],
         flag_processamento=True,
     )
+    # pml.rodar_treinamento_simples()
+    pml.rodar_grid_search()
 
-    print(f"=== PIPELINE ML: VALIDAÇÃO CRUZADA KFOLD 30 REPETIÇÕES (SEEDS 0 A 29) ===\n")
-    pml.rodar_validacao_cruzada_multiplas_sementes(n_splits=10, sementes=range(30))
-
+    # print(f"=== PIPELINE ML: VALIDAÇÃO CRUZADA KFOLD 30 REPETIÇÕES (SEEDS 0 A 29) ===\n")
+    # pml.rodar_validacao_cruzada_multiplas_sementes(n_splits=10, sementes=range(30))
+    #

@@ -34,3 +34,7 @@ class EstrategiaRegressaoLinear(EstrategiaModelo):
     @property
     def params(self) -> dict[str, Any]:
         return self._params
+
+
+# Importação para permitir acesso direto a partir deste módulo
+from .estrategia_regressao_linear_multipla import EstrategiaRegressaoLinearMultipla  # noqa: E402
