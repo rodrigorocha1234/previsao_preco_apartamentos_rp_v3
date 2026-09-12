@@ -2,8 +2,11 @@ import os
 
 import pandas as pd
 
+from avaliador.avaliador import Avaliador
 from carregador.carregador_csv import CarregadorXLSX
 from carregador.icarregador import ICarregador
+from estrategia_modelo.estrategia_modelo import EstrategiaModelo
+from estrategia_modelo.estrategia_regressao_linear import EstrategiaRegressaoLinear
 from processador.ipreprocessador import IPreprocessador
 from processador.preprocessador import Preprocessador
 
@@ -14,11 +17,17 @@ class PipelineML:
         self,
         carregador_dados: ICarregador[pd.DataFrame],
         preprocessador: IPreprocessador | None = None,
+        estrategia_modelo: EstrategiaModelo | None = None,
+        avaliador: Avaliador | None = None,
         flag_processamento: bool = True,
     ) -> None:
         self.__carregador = carregador_dados
         self.__flag_processamento = flag_processamento
         self.__preprocessador = preprocessador
+        self.__estrategia_modelo = (
+            estrategia_modelo if estrategia_modelo is not None else EstrategiaRegressaoLinear()
+        )
+        self.__avaliador = avaliador if avaliador is not None else Avaliador()
 
     def __carregar_base(self) -> pd.DataFrame:
         base = self.__carregador.carregar()
@@ -29,14 +38,42 @@ class PipelineML:
         if self.__flag_processamento and self.__preprocessador is not None:
             self.__preprocessador.base = base_original
             dados = self.__preprocessador.realizar_preprocessamento()
+
             print("Colunas de features:", self.__preprocessador.colunas_features)
             print("Formato dos dados processados:")
             print(f"X_treino: {dados.x_treino.shape}, y_treino: {dados.y_treino.shape}")
-            print(f"X_teste: {dados.x_teste.shape}, y_teste: {dados.y_teste.shape}")
+            print(f"X_teste: {dados.x_teste.shape}, y_teste: {dados.y_teste.shape}\n")
 
-            x_treino, x_teste, y_treino, y_teste = dados
-            print(x_treino)
-            return dados
+            # 1. Treinamento da Regressão Linear
+            print("Treinando o modelo de Regressão Linear...")
+            modelo_treinado = self.__estrategia_modelo.treinar_modelo_simples(
+                dados.x_treino, dados.y_treino
+            )
+
+            # 2. Exibição da Equação da Reta
+            scaler_utilizado = getattr(self.__preprocessador, "scaler", None)
+            colunas = getattr(self.__preprocessador, "colunas_features", [])
+            equacao = self.__avaliador.formatar_equacao_reta(
+                modelo=modelo_treinado,
+                colunas_features=colunas,
+                scaler=scaler_utilizado,
+            )
+            print(equacao)
+            print()
+
+            # 3. Predição no conjunto de teste
+            y_predicoes = modelo_treinado.predict(dados.x_teste)
+
+            # 4. Avaliação da Saúde Financeira e Comercial da Imobiliária
+            relatorio = self.__avaliador.gerar_relatorio_financeiro(
+                y_real=dados.y_teste,
+                y_pred=y_predicoes,
+                taxa_comissao=0.06,
+            )
+            print(relatorio)
+
+            return dados, modelo_treinado, y_predicoes
+
         print(base_original.head())
         return None
 
@@ -78,4 +115,3 @@ if __name__ == '__main__':
 
     print(f"=== PIPELINE ML COM SCALER: '{preprocessador_modelo.tipo_scaler.upper()}' ===")
     pml.rodar_treinamento_simples()
-
