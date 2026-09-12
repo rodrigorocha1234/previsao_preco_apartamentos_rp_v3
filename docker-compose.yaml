@@ -100,7 +100,9 @@ services:
           --artifacts-destination "${MLFLOW_ARTIFACTS_DESTINATION}" \
           --serve-artifacts \
           --host "${MLFLOW_HOST}" \
-          --port "${MLFLOW_PORT}"
+          --port "${MLFLOW_PORT}" \
+          --allowed-hosts "*" \
+          --cors-allowed-origins "http://localhost:5000,http://127.0.0.1:5000,http://0.0.0.0:5000"
     ports:
       - "${MLFLOW_PORT}:${MLFLOW_PORT}"
       - "5004:5004"

@@ -78,6 +78,52 @@ class TestAvaliador(unittest.TestCase):
         )
         self.assertIn("não possui coeficientes lineares", msg)
 
+    def test_avaliar_diagnostico_ajuste(self) -> None:
+        y_tr_real = np.array([100.0, 200.0, 300.0, 400.0])
+        y_tr_pred = np.array([102.0, 198.0, 301.0, 399.0])
+        y_te_real = np.array([150.0, 250.0, 350.0, 450.0])
+        y_te_pred = np.array([151.0, 249.0, 352.0, 448.0])
+
+        diag = self.avaliador.avaliar_diagnostico_ajuste(
+            y_treino_real=y_tr_real,
+            y_treino_pred=y_tr_pred,
+            y_teste_real=y_te_real,
+            y_teste_pred=y_te_pred,
+        )
+        self.assertIn("status", diag)
+        self.assertIn("treino", diag)
+        self.assertIn("teste", diag)
+        self.assertFalse(diag["possui_overfitting"])
+        self.assertIn("r2", diag["treino"])
+        self.assertIn("r2", diag["teste"])
+
+        relatorio = self.avaliador.gerar_relatorio_diagnostico_ajuste(diag)
+        self.assertIn("DIAGNÓSTICO DE AJUSTE", relatorio)
+        self.assertIn("VEREDITO TÉCNICO", relatorio)
+
+    def test_gerar_grafico_diagnostico_ajuste(self) -> None:
+        from sklearn.linear_model import LinearRegression
+        import matplotlib.figure
+
+        X_tr = np.array([[1.0, 2.0], [2.0, 3.0], [3.0, 4.0], [4.0, 5.0],
+                         [5.0, 6.0], [6.0, 7.0], [7.0, 8.0], [8.0, 9.0]])
+        y_tr = np.array([10.0, 20.0, 30.0, 40.0, 50.0, 60.0, 70.0, 80.0])
+        X_te = np.array([[9.0, 10.0], [10.0, 11.0]])
+        y_te = np.array([90.0, 100.0])
+
+        modelo = LinearRegression()
+        modelo.fit(X_tr, y_tr)
+
+        fig = self.avaliador.gerar_grafico_diagnostico_ajuste(
+            modelo=modelo,
+            x_treino=X_tr,
+            y_treino=y_tr,
+            x_teste=X_te,
+            y_teste=y_te,
+            caminho_salvar=None,
+        )
+        self.assertIsInstance(fig, matplotlib.figure.Figure)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -11,8 +11,10 @@ Sistema modular de Machine Learning para previsão de preços de apartamentos em
 - [Conjunto de Dados](#-conjunto-de-dados)
 - [Pipeline de Pré-processamento](#-pipeline-de-pré-processamento)
 - [Estratégias de Modelagem](#-estratégias-de-modelagem)
+  - [Grid Search e Otimização da Regressão Linear](#-grid-search-e-otimização-da-regressão-linear)
 - [Avaliação de Negócio e Saúde Financeira](#-avaliação-de-negócio-e-saúde-financeira-da-imobiliária)
 - [Infraestrutura MLOps (Docker)](#-infraestrutura-mlops-docker)
+- [Padrão Observer e Rastreamento com MLflow](#-padrão-observer-e-rastreamento-com-mlflow)
 - [Instalação e Execução](#-instalação-e-execução)
 - [Testes e Qualidade](#-testes-e-qualidade)
 - [Extensibilidade para Novos Modelos](#-extensibilidade-para-novos-modelos)
@@ -25,6 +27,7 @@ O objetivo deste projeto é estimar o **Valor da Venda** de imóveis a partir de
 
 Diferenciais da versão 3:
 - **Separação estrita de responsabilidades**: interfaces claras para carregamento, pré-processamento, estratégias de modelos e avaliação.
+- **Padrão Observer para MLOps**: desacoplamento completo entre a lógica de treinamento do modelo e a infraestrutura de telemetria/rastreamento do **MLflow**.
 - **Prevenção de vazamento de dados (*Data Leakage*)**: padronização e imputações ajustadas estritamente nos dados de treino.
 - **Prevenção da *Dummy Variable Trap***: codificação de variáveis categóricas usando One-Hot Encoding com descarte da primeira categoria (`drop_first=True`), garantindo que modelos lineares OLS não sofram com multicolinearidade perfeita.
 - **Testabilidade**: cobertura de testes unitários e tipagem estática com `mypy`.
@@ -89,9 +92,32 @@ classDiagram
         +params dict
     }
 
+    class IObservadorPipeline {
+        <<Protocol>>
+        +atualizar(evento, dados) void
+    }
+
+    class ObservadorMLflow {
+        +str tracking_uri
+        +str experiment_name
+        +atualizar(evento, dados) void
+    }
+
+    class ISujeitoPipeline {
+        <<Protocol>>
+        +adicionar_observador(observador) void
+        +remover_observador(observador) void
+        +notificar(evento, dados) void
+    }
+
     class PipelineML {
         -ICarregador __carregador
-        -bool __flag_processamento
+        -IPreprocessador __preprocessador
+        -EstrategiaModelo __estrategia_modelo
+        -list~IObservadorPipeline~ __observadores
+        +adicionar_observador(observador) void
+        +remover_observador(observador) void
+        +notificar(evento, dados) void
         +rodar_treinamento_simples()
     }
 
@@ -100,8 +126,11 @@ classDiagram
     Preprocessador ..> DadosProcessados
     EstrategiaModelo <|-- EstrategiaRegressaoLinear
     EstrategiaModelo o-- IRegressor
+    ISujeitoPipeline <|.. PipelineML
+    IObservadorPipeline <|.. ObservadorMLflow
     PipelineML o-- ICarregador
     PipelineML o-- IPreprocessador
+    PipelineML o-- IObservadorPipeline
 ```
 
 ---
@@ -124,6 +153,10 @@ previsao_preco_apartamentos_rp_v3/
 │   │   ├── estrategia_modelo.py
 │   │   ├── estrategia_regressao_linear.py
 │   │   └── iregressor.py
+│   ├── observador/         # Padrão Observer para auditoria e MLOps
+│   │   ├── __init__.py
+│   │   ├── iobservador.py
+│   │   └── observador_mlflow.py
 │   ├── processador/        # Pipeline de pré-processamento de features
 │   │   ├── __init__.py
 │   │   ├── ipreprocessador.py
@@ -131,6 +164,7 @@ previsao_preco_apartamentos_rp_v3/
 │   └── main.py             # Ponto de entrada e orquestração (PipelineML)
 ├── tests/                  # Testes unitários automatizados
 │   ├── test_avaliador.py
+│   ├── test_observador.py
 │   └── test_preprocessador.py
 ├── docker-compose.yaml     # Orquestração do ecossistema MLflow, Postgres e MinIO
 ├── pyproject.toml          # Configurações de ferramentas (mypy)
@@ -199,9 +233,93 @@ O projeto adota o padrão **Strategy** (`EstrategiaModelo`) para permitir a troc
 - **Contrato (`IRegressor`)**: Protocolo simples que exige `fit(x, y)` e `predict(x)`.
 - **Estratégia Base (`EstrategiaModelo`)**:
   - `treinar_modelo_simples(x_treino, y_treino)`: Ajusta o regressor.
-  - `realizar_grid_search(x_completo, y_completa)`: Otimização de hiperparâmetros via `GridSearchCV`.
+  - `realizar_grid_search(x_completo, y_completa, cv=None)`: Otimização de hiperparâmetros via `GridSearchCV` (`from sklearn.model_selection import GridSearchCV`), retornando `ResultadoGridSearch`.
 - **Implementação Atual (`EstrategiaRegressaoLinear`)**:
-  - Encapsula o `LinearRegression` do scikit-learn com suporte a parâmetros como `fit_intercept`, `positive`, etc.
+  - Encapsula o `LinearRegression` do scikit-learn com suporte aos hiperparâmetros `fit_intercept`, `positive`, etc.
+
+---
+
+### 🎯 Grid Search da Regressão Linear (`GridSearchCV`) e Persistência no MLflow
+
+A busca em grade (`Grid Search`) é executada via **`GridSearchCV`** (`from sklearn.model_selection import GridSearchCV`), avaliando todas as combinações de hiperparâmetros definidas em `self.params` sobre as características dos apartamentos.
+
+#### 1. Hiperparâmetros Avaliados
+
+| Hiperparâmetro | Valores Testados | Significado Teórico e Prático no Mercado Imobiliário |
+| :--- | :---: | :--- |
+| **`fit_intercept`** | `[True, False]` | Define se o modelo calcula a constante $\beta_0$ (intercepto livre) ou força a reta a cruzar a origem $(0, 0)$. Em imóveis, $\beta_0$ captura o patamar mínimo patrimonial da cidade; forçar $\beta_0 = 0$ distorce a inclinação marginal de todas as demais features. |
+| **`positive`** | `[True, False]` | Restringe os coeficientes a serem não-negativos ($\beta_i \ge 0$). Garante coerência econômica (*ceteris paribus*): adicionar quartos, banheiros, vagas ou área não pode reduzir o valor estimado do imóvel. |
+
+---
+
+#### 2. Tabela de Resultados do Grid Search (`GridSearchCV`)
+
+| Rank | Hiperparâmetros | Score $R^2$ Médio | Desvio Padrão ($\sigma$) | Diagnóstico e Comportamento |
+| :---: | :--- | :---: | :---: | :--- |
+| **🥇 Rank 1** | **`{'fit_intercept': True, 'positive': True}`** | **51.87%** | **±45.12%** | **Vencedor**: Maior generalização (+10.56 p.p.), menor variância e elimina a anomalia de quartos negativos. |
+| **🥈 Rank 2** | `{'fit_intercept': True, 'positive': False}` | 41.31% | ±66.69% | *Baseline OLS Livre*: Sofre com multicolinearidade, gerando coeficiente de quartos negativo. |
+| **🥉 Rank 3** | `{'fit_intercept': False, 'positive': True}` | 35.56% | ±68.60% | Sem intercepto livre: Forçar passagem pela origem prejudica o ajuste. |
+| **4º Lugar** | `{'fit_intercept': False, 'positive': False}` | 22.39% | ±95.03% | Pior combinação: Sem intercepto e coeficientes livres. |
+
+---
+
+#### 3. Salvamento dos Melhores Parâmetros no MLflow
+
+O pipeline identifica a combinação vencedora do `GridSearchCV` (`fit_intercept=True, positive=True`) e, através do padrão Observer ([`ObservadorMLflow`](src/observador/observador_mlflow.py)), persiste os **melhores parâmetros reais** no servidor do MLflow:
+
+```text
+Parameters registrados no MLflow:
+├── fit_intercept: True
+├── positive: True
+├── model_fit_intercept: True
+├── model_positive: True
+├── prep_tipo_scaler: robust
+├── prep_escalar: True
+├── prep_drop_first: True
+└── num_features: 8
+```
+
+Além dos parâmetros ótimos, a run registra:
+- **Métricas de Performance**: `reg_r2` (0.8172), `reg_mae` (R$ 111.341,69), `reg_medae` (R$ 68.565,20), `reg_rmse` (R$ 181.756,91), `reg_mape` (28.12%), etc.
+- **Métricas de Negócio**: `fin_faixa_desconto_sugerida_min_pct` (9.3%), `fin_faixa_desconto_sugerida_max_pct` (15.0%), `fin_impacto_comissao_desvio_medio` (R$ 6.680,50), `fin_risco_superavaliacao_pct` (39.37%).
+- **Artefatos Salvos**:
+  - Modelo vencedor serializado (`modelo_treinado`).
+  - `tabela_grid_search.txt` (ranking de todas as combinações avaliadas).
+  - `relatorio_saude_financeira.txt` (relatório completo de saúde financeira).
+  - `equacao_da_reta.txt` (equação analítica em escala bruta e escalonada).
+
+---
+
+#### 4. Como Executar o Grid Search no Código
+
+```python
+from carregador.carregador_csv import CarregadorXLSX
+from processador.preprocessador import Preprocessador
+from estrategia_modelo.estrategia_regressao_linear import EstrategiaRegressaoLinear
+from observador.observador_mlflow import ObservadorMLflow
+from main import PipelineML
+
+# 1. Configurar o pré-processador
+preprocessador = Preprocessador(tipo_scaler="robust", escalar=True, drop_first=True)
+
+# 2. Configurar o observador do MLflow
+observador = ObservadorMLflow(
+    tracking_uri="http://localhost:5000",
+    experiment_name="previsao_preco_apartamentos_rp",
+    run_name="regressao_linear_grid_search",
+)
+
+# 3. Inicializar pipeline e rodar Grid Search
+pipeline = PipelineML(
+    carregador_dados=carregador,
+    preprocessador=preprocessador,
+    estrategia_modelo=EstrategiaRegressaoLinear(),
+    observadores=[observador],
+)
+
+dados, resultado_grid, y_pred = pipeline.rodar_grid_search()
+print("Melhores parâmetros salvos no MLflow:", resultado_grid.melhores_parametros)
+```
 
 ---
 
@@ -458,6 +576,61 @@ Acesse o console do MinIO em `http://localhost:9001` e a UI do MLflow em `http:/
 
 ---
 
+## 👁️ Padrão Observer e Rastreamento com MLflow
+
+Para conectar o pipeline de treinamento à governança de MLOps sem violar os princípios de **Clean Architecture** e **SOLID** (notadamente o Princípio de Inversão de Dependência e Responsabilidade Única), o projeto implementa o padrão comportamental **Observer (GoF)**.
+
+### Por que usar o Observer para MLOps?
+- **Desacoplamento Absoluto**: O [`PipelineML`](src/main.py) não contém nenhuma chamada direta ao SDK do MLflow. Ele apenas emite notificações em pontos-chave do seu ciclo de vida.
+- **Extensibilidade**: Se amanhã for necessário enviar métricas para o Weights & Biases (WandB), Datadog ou disparar um alerta no Slack, basta implementar o protocolo [`IObservadorPipeline`](src/observador/iobservador.py) e adicioná-lo à lista de observadores, sem alterar uma única linha do pipeline principal.
+- **Tolerância a Falhas**: O [`ObservadorMLflow`](src/observador/observador_mlflow.py) possui tratamento defensivo de exceções. Se o servidor do MLflow estiver temporariamente inacessível, o treinamento principal executa com sucesso, emitindo alertas amigáveis via logging.
+
+### Diagrama de Sequência do Padrão Observer no Treinamento
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Dev as Usuário / main.py
+    participant Pipe as PipelineML (Sujeito)
+    participant Obs as ObservadorMLflow (Observador)
+    participant MLF as Servidor MLflow (Docker)
+
+    Dev->>Pipe: adicionar_observador(observador_mlflow)
+    Dev->>Pipe: rodar_treinamento_simples()
+    
+    Note over Pipe: Pré-processamento concluído
+    Pipe->>Obs: atualizar("inicio_treinamento", dados_inicio)
+    Obs->>MLF: mlflow.start_run() & log_params() & set_tags()
+    
+    Note over Pipe: Treinamento do Modelo concluído
+    Pipe->>Obs: atualizar("fim_treinamento", {"modelo": modelo})
+    Obs->>MLF: mlflow.sklearn.log_model(modelo)
+    
+    Note over Pipe: Avaliação Estatística e Financeira concluída
+    Pipe->>Obs: atualizar("fim_avaliacao", dados_metricas)
+    Obs->>MLF: mlflow.log_metrics() & log_text(relatorio, equacao)
+    Obs->>MLF: mlflow.end_run()
+```
+
+### O que é persistido no MLflow?
+
+1. **Parâmetros (`mlflow.log_params`)**:
+   - Configurações do processador: `prep_tipo_scaler`, `prep_escalar`, `prep_drop_first`, `prep_tamanho_teste`, `prep_random_state`.
+   - Hiperparâmetros do regressor: `model_fit_intercept`, `model_positive`, etc.
+   - Quantidade de features utilizadas: `num_features`.
+2. **Métricas Estatísticas de Regressão (`mlflow.log_metrics`)**:
+   - `reg_r2`, `reg_r2_ajustado`, `reg_mae`, `reg_medae`, `reg_rmse`, `reg_mape`, `reg_max_error`.
+3. **Métricas Financeiras e de Negócio (`mlflow.log_metrics`)**:
+   - `fin_faixa_desconto_sugerida_min_pct`, `fin_faixa_desconto_sugerida_max_pct`, `fin_mediana_erro_percentual_pct`.
+   - `fin_risco_superavaliacao_pct`, `fin_risco_subavaliacao_pct`.
+   - `fin_desvio_medio_comissao_reais`, `fin_assertividade_tolerancia_5pct`, `fin_assertividade_tolerancia_10pct`, `fin_assertividade_tolerancia_15pct`.
+4. **Artefatos Serializados e Documentos (`mlflow.log_text` / `mlflow.sklearn.log_model`)**:
+   - `modelo_treinado/`: Modelo scikit-learn serializado com seu ambiente de dependências.
+   - `relatorio_saude_financeira.txt`: Relatório executivo completo em texto puro.
+   - `equacao_da_reta.txt`: Equação analítica da reta em escala original e padronizada.
+
+---
+
 ## 🚀 Instalação e Execução
 
 ### 1. Pré-requisitos
@@ -496,7 +669,7 @@ if __name__ == '__main__':
     # ESCOLHA DA ESTRATÉGIA DE PRÉ-PROCESSAMENTO:
     # -------------------------------------------------------------------------
     
-    # OPÇÃO 1: Processamento Robusto a Outliers (Recomendado para imóveis)
+    # 1. Configurando o pré-processador com RobustScaler (resistente a imóveis atípicos):
     preprocessador = Preprocessador(
         tipo_scaler="robust",   # RobustScaler: baseado em mediana e IQR
         escalar=True,
@@ -505,19 +678,19 @@ if __name__ == '__main__':
         random_state=42,
     )
 
-    # OPÇÃO 2: Padronização Clássica Z-Score (Média 0, Variância 1)
-    # preprocessador = Preprocessador(tipo_scaler="standard")
+    # 2. Configurando o Observador do MLflow (Padrão Observer):
+    observador_mlflow = ObservadorMLflow(
+        tracking_uri=os.getenv("MLFLOW_TRACKING_URI", "http://localhost:5000"),
+        experiment_name="previsao_preco_apartamentos_rp",
+        run_name="regressao_linear_baseline",
+        tags={"algoritmo": "RegressaoLinear", "ambiente": "desenvolvimento"},
+    )
 
-    # OPÇÃO 3: Normalização Linear no intervalo [0, 1]
-    # preprocessador = Preprocessador(tipo_scaler="minmax")
-
-    # OPÇÃO 4: Para Modelos de Árvore (Random Forest, XGBoost) sem escalonamento
-    # preprocessador = Preprocessador(escalar=False, drop_first=False)
-
-    # Injeção de dependência no PipelineML:
+    # 3. Injeção de dependência no PipelineML:
     pml = PipelineML(
         carregador_dados=carregador,
         preprocessador=preprocessador,
+        observadores=[observador_mlflow],
         flag_processamento=True,
     )
     pml.rodar_treinamento_simples()
@@ -599,6 +772,8 @@ Equação no Espaço Escalonado (com transformador ativo):
    - Dentro de ±10% do Preço Real   : 27.12%
    - Dentro de ±15% do Preço Real   : 38.06%
 =================================================================
+🏃 View run regressao_linear_baseline at: http://localhost:5000/#/experiments/1/runs/05365d1722c04194b40f001e7b9d7d8b
+🧪 View experiment at: http://localhost:5000/#/experiments/1
 ```
 
 
@@ -607,11 +782,11 @@ Equação no Espaço Escalonado (com transformador ativo):
 ## 🧪 Testes e Qualidade
 
 ### Execução dos Testes Unitários
-Os testes utilizam `unittest` da biblioteca padrão e cobrem integralmente as regras do pipeline de dados ([`test_preprocessador.py`](tests/test_preprocessador.py)) e as métricas de negócio do avaliador financeiro ([`test_avaliador.py`](tests/test_avaliador.py)):
+Os testes utilizam `unittest` da biblioteca padrão e cobrem integralmente as regras do pipeline de dados ([`test_preprocessador.py`](tests/test_preprocessador.py)), as métricas de negócio do avaliador financeiro ([`test_avaliador.py`](tests/test_avaliador.py)) e o desacoplamento MLOps do padrão Observer ([`test_observador.py`](tests/test_observador.py)):
 ```bash
 PYTHONPATH=src python -m unittest discover -s tests -p "test_*.py"
 ```
-Total de testes automatizados: **25 testes** aprovados.
+Total de testes automatizados: **28 testes** aprovados.
 
 ### Verificação Estática de Tipos (Mypy)
 Como o arquivo `pyproject.toml` já está configurado com `mypy_path = "src"` e `files = ["src", "tests"]`, basta executar:
