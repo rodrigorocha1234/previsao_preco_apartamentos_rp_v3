@@ -588,8 +588,8 @@ if __name__ == '__main__':
         observadores=[observador_mlflow],
         flag_processamento=True,
     )
-    # pml.rodar_treinamento_simples()
-    pml.rodar_grid_search()
+    pml.rodar_treinamento_simples()
+    # pml.rodar_grid_search()
 
     # print(f"=== PIPELINE ML: VALIDAÇÃO CRUZADA KFOLD 30 REPETIÇÕES (SEEDS 0 A 29) ===\n")
     # pml.rodar_validacao_cruzada_multiplas_sementes(n_splits=10, sementes=range(30))
