@@ -465,3 +465,53 @@ class Avaliador:
             plt.savefig(caminho_salvar, bbox_inches="tight")
 
         return fig
+
+    def gerar_relatorio_validacao_cruzada(self, resultado: Any) -> str:
+        """Formata o relatório textual completo da Validação Cruzada k-fold para console e MLflow."""
+        n_splits = getattr(resultado, "n_splits", 5)
+        media_r2 = getattr(resultado, "media_test_r2", 0.0) * 100
+        std_r2 = getattr(resultado, "std_test_r2", 0.0) * 100
+        media_mae = getattr(resultado, "media_test_mae", 0.0)
+        std_mae = getattr(resultado, "std_test_mae", 0.0)
+        media_rmse = getattr(resultado, "media_test_rmse", 0.0)
+        std_rmse = getattr(resultado, "std_test_rmse", 0.0)
+        media_tr_r2 = getattr(resultado, "media_train_r2", 0.0) * 100
+        std_tr_r2 = getattr(resultado, "std_train_r2", 0.0) * 100
+        df_folds = getattr(resultado, "tabela_folds", pd.DataFrame())
+
+        linhas = [
+            "=" * 65,
+            f"   RELATÓRIO DE VALIDAÇÃO CRUZADA (KFOLD = {n_splits} SPLITS)",
+            "=" * 65,
+            "1. DESEMPENHO MÉDIO GERAL (ESTIMATIVA NÃO-ENVIESADA):",
+            f"   - Score R² Médio     : {media_r2:.2f}% (±{std_r2:.2f}%)",
+            f"   - MAE Médio (R$)     : R$ {media_mae:,.2f} (±R$ {std_mae:,.2f})",
+            f"   - RMSE Médio (R$)    : R$ {media_rmse:,.2f} (±R$ {std_rmse:,.2f})",
+            f"   - R² Treino Médio    : {media_tr_r2:.2f}% (±{std_tr_r2:.2f}%)",
+            "",
+            "2. DETALHAMENTO INDIVIDUAL POR FOLD:",
+            "   Fold | R² Teste (%) | MAE Teste (R$)    | RMSE Teste (R$)   | R² Treino (%)",
+            "   -------------------------------------------------------------------------",
+        ]
+
+        if not df_folds.empty:
+            for _, row in df_folds.iterrows():
+                f_idx = int(row["fold"])
+                r2_val = float(row["test_r2"]) * 100
+                mae_val = float(row["test_mae"])
+                rmse_val = float(row["test_rmse"])
+                tr_r2_val = float(row.get("train_r2", 0.0)) * 100
+                linhas.append(
+                    f"    {f_idx:2d}  | {r2_val:10.2f}% | R$ {mae_val:13,.2f} | R$ {rmse_val:14,.2f} | {tr_r2_val:11.2f}%"
+                )
+
+        linhas.extend([
+            "=" * 65,
+            "3. PARECER ANALÍTICO DE ESTABILIDADE:",
+            f"   A dispersão do R² (desvio padrão de {std_r2:.2f} p.p.) demonstra a "
+            f"{'alta estabilidade' if std_r2 < 10.0 else 'sensibilidade amostral'} do regressor linear",
+            "   diante de variações nas partições de teste.",
+            "=" * 65,
+        ])
+        return "\n".join(linhas)
+

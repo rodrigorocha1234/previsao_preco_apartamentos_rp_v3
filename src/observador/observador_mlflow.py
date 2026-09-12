@@ -66,7 +66,8 @@ class ObservadorMLflow(IObservadorPipeline):
                 mlflow.set_tracking_uri(self.tracking_uri)
 
             mlflow.set_experiment(self.experiment_name)
-            mlflow.start_run(run_name=self.run_name)
+            nome_run = str(dados.get("run_name", self.run_name))
+            mlflow.start_run(run_name=nome_run)
             self._run_ativa = True
 
             # Tags padrão e customizadas
@@ -77,10 +78,16 @@ class ObservadorMLflow(IObservadorPipeline):
             }
             if "modelo_nome" in dados:
                 tags_finais["modelo_nome"] = str(dados["modelo_nome"])
+            if "kfold_random_state" in dados:
+                tags_finais["kfold_random_state"] = str(dados["kfold_random_state"])
+            if "seed" in dados:
+                tags_finais["seed"] = str(dados["seed"])
             mlflow.set_tags(tags_finais)
 
             # Log de parâmetros de pré-processamento e hiperparâmetros
             params: dict[str, Any] = {}
+            if "kfold_random_state" in dados:
+                params["kfold_random_state"] = dados["kfold_random_state"]
             if "parametros_processador" in dados and isinstance(dados["parametros_processador"], dict):
                 for k, v in dados["parametros_processador"].items():
                     params[f"prep_{k}"] = str(v) if isinstance(v, (list, dict, tuple)) else v
@@ -151,16 +158,27 @@ class ObservadorMLflow(IObservadorPipeline):
                     if isinstance(v, (int, float)):
                         metricas[f"fin_{k}"] = float(v)
 
-            if "metricas_treino" in dados and isinstance(dados["metricas_treino"], dict):
-                for k, v in dados["metricas_treino"].items():
+            if "validacao_cruzada" in dados and isinstance(dados["validacao_cruzada"], dict):
+                for k, v in dados["validacao_cruzada"].items():
                     if isinstance(v, (int, float)):
-                        metricas[f"treino_{k}"] = float(v)
+                        metricas[f"cv_{k}"] = float(v)
+
+            if "cv_folds_metricas" in dados and isinstance(dados["cv_folds_metricas"], dict):
+                for k, v in dados["cv_folds_metricas"].items():
+                    if isinstance(v, (int, float)):
+                        metricas[k] = float(v)
 
             if metricas:
                 mlflow.log_metrics(metricas)
 
             if "diagnostico_status" in dados:
                 mlflow.set_tag("diagnostico_ajuste", str(dados["diagnostico_status"]))
+
+            if "cv_estrategia" in dados:
+                mlflow.set_tag("cv_estrategia", str(dados["cv_estrategia"]))
+
+            if "cv_n_splits" in dados:
+                mlflow.set_tag("cv_n_splits", str(dados["cv_n_splits"]))
 
             # 2. Artefatos Textuais e Gráficos
             if self.logar_artefatos:
@@ -192,6 +210,10 @@ class ObservadorMLflow(IObservadorPipeline):
                 tabela_grid = dados.get("tabela_grid")
                 if isinstance(tabela_grid, str) and tabela_grid.strip():
                     mlflow.log_text(tabela_grid, "tabela_grid_search.txt")
+
+                relatorio_cv = dados.get("relatorio_validacao_cruzada")
+                if isinstance(relatorio_cv, str) and relatorio_cv.strip():
+                    mlflow.log_text(relatorio_cv, "resultado_validacao_cruzada.txt")
 
                 relatorio = dados.get("relatorio_financeiro")
                 if isinstance(relatorio, str) and relatorio.strip():
